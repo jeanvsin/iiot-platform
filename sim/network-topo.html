@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网络拓扑与数据采集 — 项目二子任务3</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  /* === 统一浅色主题（与主平台一致）=== */
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f1f5f9;color:#0f172a;overflow:hidden;height:100vh;font-size:15px;line-height:1.6;}
+  /* top-bar：白底深字 + 蓝色 accent，与主平台 header 风格统一 */
+  .top-bar{height:64px;background:#ffffff;display:flex;align-items:center;padding:0 24px;border-bottom:2px solid #e2e8f0;justify-content:space-between;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+  .top-bar h1{font-size:18px;font-weight:600;color:#0f172a;letter-spacing:.5px;display:flex;align-items:center;gap:10px;}
+  .top-bar h1::before{content:"";display:inline-block;width:4px;height:20px;background:linear-gradient(180deg,#0ea5e9,#0369a1);border-radius:2px;}
+  .top-bar .badge{background:#10b981;color:#fff;font-size:13px;padding:4px 12px;border-radius:12px;margin-left:12px;font-weight:600;}
+  .top-bar .badge.fault{background:#ef4444;color:#fff;animation:blink 1s infinite;}
+  .top-bar .version-tag{background:#e0f2fe;color:#0369a1;font-size:11px;padding:3px 10px;border-radius:10px;margin-left:auto;font-weight:600;letter-spacing:.5px;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+  .main{display:flex;height:calc(100vh - 64px);}
+  /* 设备库面板：白色背景 + 深色文字 */
+  .device-panel{width:220px;background:#fff;border-right:1px solid #e2e8f0;padding:18px 14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;box-shadow:2px 0 4px rgba(15,23,42,.04);}
+  .device-panel h3{font-size:15px;color:#0369a1;margin-bottom:6px;font-weight:700;}
+  .device-item{background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px;cursor:grab;display:flex;align-items:center;gap:10px;transition:all .2s;user-select:none;color:#0f172a;}
+  .device-item:hover{border-color:#0ea5e9;background:#e0f2fe;transform:translateX(2px);box-shadow:0 2px 8px rgba(14,165,233,.2);}
+  .device-item .icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+  .device-item .info{font-size:14px;line-height:1.5;}
+  .device-item .info .name{font-size:14px;font-weight:600;color:#0f172a;}
+  .icon-plc{background:#15803d;color:#fff;}.icon-sensor{background:#ea580c;color:#fff;}.icon-gateway{background:#7c3aed;color:#fff;}
+  .icon-server{background:#0369a1;color:#fff;}.icon-camera{background:#b91c1c;color:#fff;}.icon-robot{background:#65a30d;color:#fff;}
+  /* 画布：保持深色以适应网络拓扑可视化 */
+  .canvas-area{flex:1;position:relative;overflow:hidden;background:#0f172a;background-image:radial-gradient(circle at 30% 20%, rgba(56,189,248,.06) 0%, transparent 50%),radial-gradient(circle at 80% 80%, rgba(34,197,94,.04) 0%, transparent 50%);}
+  .canvas-area svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+  .canvas-area svg line{stroke:#38bdf8;stroke-width:2;pointer-events:auto;cursor:pointer;}
+  .canvas-area svg line.active{stroke:#10b981;stroke-width:3;filter:drop-shadow(0 0 4px #10b981);}
+  .canvas-area svg line.fault{stroke:#ef4444;stroke-width:3;stroke-dasharray:8 4;animation:fb 1s infinite;filter:drop-shadow(0 0 6px #ef4444);}
+  .canvas-area svg line.fault-data{stroke:#f59e0b;stroke-width:3;stroke-dasharray:4 4;animation:fb 1.5s infinite;filter:drop-shadow(0 0 4px #f59e0b);}
+  @keyframes fb{0%,100%{opacity:1}50%{opacity:.3}}
+  .topo-node{position:absolute;z-index:10;border-radius:12px;padding:12px 16px;cursor:move;user-select:none;min-width:120px;max-width:150px;text-align:center;transition:box-shadow .2s;font-size:14px;color:#fff;}
+  .topo-node:hover{box-shadow:0 0 20px rgba(14,165,233,.5);transform:scale(1.02);}
+  .topo-node.selected{box-shadow:0 0 0 3px #0ea5e9,0 0 20px rgba(14,165,233,.5);}
+  .topo-node.fault-node{animation:fp 1.5s infinite;}
+  .topo-node.fault-err{box-shadow:0 0 0 3px #ef4444,0 0 20px rgba(239,68,68,.5);animation:fp 1.5s infinite;}
+  .topo-node.fault-warn{box-shadow:0 0 0 3px #f59e0b,0 0 20px rgba(245,158,11,.5);animation:fp 2s infinite;}
+  @keyframes fp{0%,100%{opacity:1}50%{opacity:.7}}
+  .topo-node .node-icon{font-size:24px;margin-bottom:4px;}
+  .topo-node .node-name{font-size:14px;font-weight:600;color:#fff;white-space:nowrap;line-height:1.3;}
+  .topo-node .node-protocol{font-size:12px;color:rgba(255,255,255,.85);margin-top:3px;font-weight:500;}
+  .topo-node .status-dot{width:10px;height:10px;border-radius:50%;position:absolute;top:8px;right:8px;}
+  .status-online{background:#10b981;box-shadow:0 0 6px #10b981;}
+  .status-offline{background:#ef4444;box-shadow:0 0 6px #ef4444;animation:blink 1s infinite;}
+  .status-warn{background:#f59e0b;box-shadow:0 0 6px #f59e0b;animation:blink 1.5s infinite;}
+  .node-plc{background:linear-gradient(135deg,#15803d,#16a34a);border:1px solid #22c55e;}
+  .node-sensor{background:linear-gradient(135deg,#ea580c,#f97316);border:1px solid #fb923c;}
+  .node-gateway{background:linear-gradient(135deg,#7c3aed,#8b5cf6);border:1px solid #a78bfa;}
+  .node-server{background:linear-gradient(135deg,#0369a1,#0284c7);border:1px solid #38bdf8;}
+  .node-camera{background:linear-gradient(135deg,#b91c1c,#dc2626);border:1px solid #f87171;}
+  .node-robot{background:linear-gradient(135deg,#65a30d,#84cc16);border:1px solid #a3e635;}
+  .data-particle{position:absolute;width:6px;height:6px;border-radius:50%;z-index:5;pointer-events:none;}
+  .particle-modbus{background:#f59e0b;box-shadow:0 0 6px #f59e0b;}
+  .particle-opcua{background:#06b6d4;box-shadow:0 0 6px #06b6d4;}
+  .particle-mqtt{background:#84cc16;box-shadow:0 0 6px #84cc16;}
+  .connect-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.95);border:1px solid #38bdf8;border-radius:8px;padding:10px 18px;font-size:14px;color:#e0f2fe;z-index:20;box-shadow:0 4px 12px rgba(2,6,23,.3);}
+  /* 数据采集监控面板：白色背景 + 深色文字 */
+  .data-panel{width:380px;background:#fff;border-left:1px solid #e2e8f0;display:flex;flex-direction:column;box-shadow:-2px 0 4px rgba(15,23,42,.04);}
+  .data-panel .panel-header{padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;}
+  .data-panel .panel-header h3{font-size:16px;color:#0f172a;font-weight:700;}
+  .protocol-tabs{display:flex;gap:6px;}
+  .protocol-tabs button{background:#fff;border:1px solid #cbd5e1;color:#475569;padding:5px 12px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s;}
+  .protocol-tabs button:hover{background:#f1f5f9;border-color:#94a3b8;}
+  .protocol-tabs button.active{background:#0369a1;color:#fff;border-color:#0284c7;}
+  .data-table-wrap{flex:1;overflow-y:auto;padding:10px;background:#fff;}
+  .data-table-wrap::-webkit-scrollbar{width:6px;}
+  .data-table-wrap::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+  .data-table-wrap::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
+  table.data-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.data-table th{background:#f1f5f9;color:#0f172a;padding:8px 10px;text-align:left;position:sticky;top:0;font-weight:600;border-bottom:1px solid #e2e8f0;}
+  table.data-table td{padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#334155;}
+  table.data-table tr:hover td{background:#f8fafc;}
+  table.data-table tr.fault-row td{background:rgba(239,68,68,.06);}
+  table.data-table tr.warn-row td{background:rgba(245,158,11,.06);}
+  .val-ok{color:#10b981;font-weight:600;}.val-warn{color:#f59e0b;font-weight:600;}.val-err{color:#ef4444;font-weight:700;}.val-corrupt{color:#f97316;font-weight:600;}
+  .metrics-bar{padding:14px 18px;border-top:1px solid #e2e8f0;display:flex;gap:12px;background:#f8fafc;}
+  .metric-card{flex:1;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center;}
+  .metric-card .val{font-size:20px;font-weight:700;color:#0369a1;}
+  .metric-card .label{font-size:12px;color:#64748b;margin-top:3px;}
+  .toolbar{position:absolute;top:14px;right:14px;z-index:20;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:360px;}
+  .toolbar button{background:#fff;border:1px solid #cbd5e1;color:#334155;padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s;white-space:nowrap;font-weight:500;box-shadow:0 1px 2px rgba(15,23,42,.05);}
+  .toolbar button:hover{background:#f1f5f9;border-color:#94a3b8;box-shadow:0 2px 4px rgba(15,23,42,.1);}
+  .toolbar button.active{background:#15803d;border-color:#16a34a;color:#fff;box-shadow:0 2px 4px rgba(21,128,61,.3);}
+  .toolbar button.fault-btn{border-color:#fca5a5;color:#dc2626;}
+  .toolbar button.fault-btn:hover{background:#dc2626;color:#fff;border-color:#b91c1c;}
+  .mode-indicator{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;background:#15803d;color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;display:none;font-weight:600;box-shadow:0 2px 8px rgba(21,128,61,.3);}
+  .mode-indicator.show{display:block;}
+  .node-props{position:absolute;bottom:16px;right:16px;z-index:20;background:rgba(255,255,255,.98);border:1px solid #cbd5e1;border-radius:10px;padding:14px 18px;min-width:240px;display:none;box-shadow:0 4px 16px rgba(15,23,42,.15);color:#0f172a;}
+  .node-props.show{display:block;}
+  .node-props h4{font-size:15px;color:#0369a1;margin-bottom:10px;font-weight:700;}
+  .node-props .prop-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid #f1f5f9;}
+  .node-props .prop-label{color:#64748b;}
+  .node-props .prop-value{color:#0f172a;font-weight:500;}
+  .context-menu{position:absolute;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:4px 0;min-width:160px;display:none;box-shadow:0 4px 16px rgba(15,23,42,.15);}
+  .context-menu .menu-item{padding:10px 16px;font-size:14px;color:#334155;cursor:pointer;}
+  .context-menu .menu-item:hover{background:#f1f5f9;color:#0f172a;}
+  .context-menu .menu-item.danger{color:#dc2626;}
+  .context-menu .menu-item.danger:hover{background:#fef2f2;}
+  .fault-banner{position:absolute;top:64px;left:220px;right:380px;z-index:30;padding:14px 22px;display:none;align-items:center;justify-content:space-between;animation:slideDown .3s ease;box-shadow:0 4px 12px rgba(2,6,23,.2);border-radius:0 0 8px 8px;}
+  .fault-banner.show{display:flex;}
+  .fault-banner.level-err{background:linear-gradient(90deg,#b91c1c,#dc2626);color:#fff;}
+  .fault-banner.level-warn{background:linear-gradient(90deg,#ea580c,#f97316);color:#fff;}
+  @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+  .fault-banner .fb-left{display:flex;align-items:center;gap:12px;}
+  .fault-banner .fb-icon{font-size:24px;animation:shake .5s infinite;}
+  @keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-5deg)}75%{transform:rotate(5deg)}}
+  .fault-banner .fb-text{font-size:15px;font-weight:600;}
+  .fault-banner .fb-sub{font-size:13px;opacity:.9;margin-top:3px;}
+  .fault-banner .fb-actions{display:flex;gap:8px;}
+  .fault-banner .fb-btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;}
+  .fb-btn-diagnose{background:#fff;color:#b91c1c;}
+  .fb-btn-diagnose:hover{background:#fecaca;}
+  .fb-btn-dismiss{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;}
+  .fb-btn-dismiss:hover{background:rgba(255,255,255,.1);}
+  .no-data{text-align:center;padding:50px 20px;color:#64748b;font-size:14px;}
+  .no-data .nd-icon{font-size:48px;margin-bottom:14px;opacity:.5;}
+  /* 故障选择弹窗 - 浅色主题 */
+  .fault-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.6);z-index:100;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+  .fault-modal.show{display:flex;}
+  .fault-modal-box{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px;width:560px;max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(15,23,42,.3);}
+  .fault-modal-box h2{color:#dc2626;font-size:19px;margin-bottom:18px;text-align:center;font-weight:700;}
+  .fault-option{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .2s;}
+  .fault-option:hover{border-color:#f59e0b;background:#fffbeb;box-shadow:0 2px 8px rgba(245,158,11,.15);}
+  .fault-option .fo-title{font-size:15px;font-weight:600;color:#0f172a;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+  .fault-option .fo-desc{font-size:13px;color:#475569;line-height:1.6;}
+  .fault-option .fo-tag{font-size:11px;padding:3px 8px;border-radius:5px;font-weight:600;}
+  .fo-tag-err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}
+  .fo-tag-warn{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
+  .fault-modal-close{display:block;margin:14px auto 0;background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;padding:10px 28px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s;}
+  .fault-modal-close:hover{background:#e2e8f0;color:#0f172a;}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <h1>🔗 网络拓扑搭建与数据采集监控</h1>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="version-tag" id="versionTag">v2.0 浅色版</span>
+    <span class="badge" id="statusBadge">系统正常</span>
+  </div>
+</div>
+<div class="fault-banner" id="faultBanner">
+  <div class="fb-left">
+    <span class="fb-icon" id="fbIcon">🚨</span>
+    <div>
+      <div class="fb-text" id="faultText">-</div>
+      <div class="fb-sub" id="faultSub">-</div>
+    </div>
+  </div>
+  <div class="fb-actions">
+    <button class="fb-btn fb-btn-diagnose" onclick="openDiagnosis()">🤖 启动AI诊断</button>
+    <button class="fb-btn fb-btn-dismiss" onclick="dismissFault()">关闭</button>
+  </div>
+</div>
+<div class="main">
+  <div class="device-panel">
+    <h3>📦 设备库（拖拽到画布）</h3>
+    <div class="device-item" draggable="true" data-type="plc" data-name="S7-1200 PLC"><div class="icon icon-plc">🔧</div><div class="info"><div class="name">S7-1200 PLC</div><div>OPC UA</div></div></div>
+    <div class="device-item" draggable="true" data-type="sensor" data-name="温湿度传感器"><div class="icon icon-sensor">🌡️</div><div class="info"><div class="name">温湿度传感器</div><div>Modbus RTU</div></div></div>
+    <div class="device-item" draggable="true" data-type="camera" data-name="视觉质检仪"><div class="icon icon-camera">📷</div><div class="info"><div class="name">视觉质检仪</div><div>MQTT</div></div></div>
+    <div class="device-item" draggable="true" data-type="robot" data-name="AGV搬运机器人"><div class="icon icon-robot">🤖</div><div class="info"><div class="name">AGV机器人</div><div>MQTT</div></div></div>
+    <div class="device-item" draggable="true" data-type="gateway" data-name="边缘网关"><div class="icon icon-gateway">📡</div><div class="info"><div class="name">边缘网关</div><div>多协议转换</div></div></div>
+    <div class="device-item" draggable="true" data-type="server" data-name="云平台服务器"><div class="icon icon-server">🖥️</div><div class="info"><div class="name">云平台服务器</div><div>MQTT Broker</div></div></div>
+  </div>
+  <div class="canvas-area" id="canvas">
+    <svg id="svgLines"></svg>
+    <div class="toolbar">
+      <button id="btnConnect" onclick="toggleConnectMode()">🔗 连线</button>
+      <button onclick="loadPresetTopology()">📋 预设拓扑</button>
+      <button onclick="clearAll()">🗑️ 清空</button>
+      <button id="btnSimulate" onclick="toggleSimulation()">▶ 启动采集</button>
+      <button id="btnFault" class="fault-btn" onclick="showFaultModal()" style="display:none;">⚡ 注入故障</button>
+    </div>
+    <div class="mode-indicator" id="modeIndicator">🔗 连线模式：点击两个节点建立连接 | ESC退出</div>
+    <div class="connect-hint" id="connectHint">💡 从左侧拖拽设备到画布，或使用「加载预设拓扑」快速搭建</div>
+    <div class="node-props" id="nodeProps">
+      <h4 id="propsTitle">设备属性</h4>
+      <div class="prop-row"><span class="prop-label">设备类型</span><span class="prop-value" id="propType">-</span></div>
+      <div class="prop-row"><span class="prop-label">通信协议</span><span class="prop-value" id="propProto">-</span></div>
+      <div class="prop-row"><span class="prop-label">IP地址</span><span class="prop-value" id="propIP">-</span></div>
+      <div class="prop-row"><span class="prop-label">数据点位</span><span class="prop-value" id="propPoints">-</span></div>
+      <div class="prop-row"><span class="prop-label">采集状态</span><span class="prop-value" id="propStatus">-</span></div>
+    </div>
+  </div>
+  <div class="data-panel">
+    <div class="panel-header">
+      <h3>📊 数据采集监控</h3>
+      <div class="protocol-tabs">
+        <button class="active" onclick="filterProtocol(this,'all')">全部</button>
+        <button onclick="filterProtocol(this,'Modbus')">Modbus</button>
+        <button onclick="filterProtocol(this,'OPC UA')">OPC UA</button>
+        <button onclick="filterProtocol(this,'MQTT')">MQTT</button>
+      </div>
+    </div>
+    <div class="data-table-wrap" id="dataTableWrap">
+      <table class="data-table"><thead><tr><th>设备</th><th>协议</th><th>数据点</th><th>数值</th><th>时间</th><th>状态</th></tr></thead><tbody id="dataBody"></tbody></table>
+      <div class="no-data" id="noDataHint"><div class="nd-icon">📡</div><div>请先搭建拓扑并启动采集</div></div>
+    </div>
+    <div class="metrics-bar">
+      <div class="metric-card"><div class="val" id="metricDevices">0</div><div class="label">在线设备</div></div>
+      <div class="metric-card"><div class="val" id="metricPoints">0</div><div class="label">数据点位</div></div>
+      <div class="metric-card"><div class="val" id="metricRate">0</div><div class="label">采集频率/s</div></div>
+      <div class="metric-card"><div class="val" id="metricOk">-</div><div class="label">成功率</div></div>
+    </div>
+  </div>
+</div>
+<!-- 故障选择弹窗 -->
+<div class="fault-modal" id="faultModal">
+  <div class="fault-modal-box">
+    <h2>⚡ 选择故障类型</h2>
+    <div class="fault-option" onclick="injectFault('mqtt_topic')">
+      <div class="fo-title">🔴 故障1：MQTT Topic映射不一致 <span class="fo-tag fo-tag-err">数据中断</span></div>
+      <div class="fo-desc">视觉质检仪固件升级v1.8→v2.1后MQTT发布Topic变更(quality_01→quality_02)，边缘网关订阅配置未同步更新，导致质检数据采集中断。</div>
+    </div>
+    <div class="fault-option" onclick="injectFault('modbus_conflict')">
+      <div class="fo-title">🟠 故障2：Modbus RTU从站地址被重置 <span class="fo-tag fo-tag-warn">通信超时</span></div>
+      <div class="fo-desc">温湿度传感器Modbus RTU从站地址被重置为出厂默认值0（原配置Slave ID=2），网关仍按ID=2轮询，通信地址不匹配导致数据归零、通信超时。</div>
+    </div>
+    <div class="fault-option" onclick="injectFault('mqtt_auth')">
+      <div class="fo-title">🔴 故障3：MQTT Broker认证策略变更 <span class="fo-tag fo-tag-err">连接拒绝</span></div>
+      <div class="fo-desc">MQTT Broker更新了安全策略，要求TLS证书认证，但AGV机器人仍使用旧的密码认证方式，导致连接被拒绝、设备离线。</div>
+    </div>
+    <button class="fault-modal-close" onclick="closeFaultModal()">取消</button>
+  </div>
+</div>
+<div class="context-menu" id="contextMenu">
+  <div class="menu-item" onclick="showDeviceInfo()">ℹ️ 设备详情</div>
+  <div class="menu-item" onclick="disconnectSelected()">🔌 断开连接</div>
+  <div class="menu-item danger" onclick="deleteSelected()">🗑️ 删除设备</div>
+</div>
+
+<script>
+// 错误捕获：方便父组件调试
+window.addEventListener('error', (e) => {
+  console.error('[network-topo] 错误:', e.message, e.filename, e.lineno);
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'iiot-sim-error',
+        source: 'network-topo',
+        payload: { message: e.message, file: e.filename, line: e.lineno }
+      }, '*');
+    }
+  } catch (_) { /* ignore */ }
+});
+
+let nodes=[],connections=[],nodeIdCounter=0;
+let connectMode=false,connectSource=null;
+let simulationRunning=false,simInterval=null,particleInterval=null;
+let dragNode=null,dragOffset={x:0,y:0};
+let currentFilter='all';
+let faultActive=false,faultNodeId=null,faultType=null;
+
+const canvas=document.getElementById('canvas');
+const svgLines=document.getElementById('svgLines');
+if (!canvas || !svgLines) {
+  console.error('[network-topo] 关键 DOM 元素未找到：canvas=', !!canvas, 'svgLines=', !!svgLines);
+}
+const protocolMap={
+  plc:{protocol:'OPC UA',points:'寄存器R0-R99',ip:'192.168.1.10'},
+  sensor:{protocol:'Modbus RTU',points:'温度/湿度',ip:'COM3'},
+  camera:{protocol:'MQTT',points:'缺陷数/合格状态',ip:'192.168.1.20'},
+  robot:{protocol:'MQTT',points:'位置/电量/任务',ip:'192.168.1.30'},
+  gateway:{protocol:'多协议',points:'转换规则',ip:'192.168.1.1'},
+  server:{protocol:'MQTT Broker',points:'全量数据',ip:'192.168.1.100'}
+};
+
+// ===== 故障定义 =====
+const faultDefs = {
+  mqtt_topic: {
+    target: 'camera', name: 'MQTT Topic映射不一致',
+    bannerText: '视觉质检仪 MQTT 数据采集中断',
+    bannerSub: '根因：固件升级后Topic变更，网关映射未同步',
+    level: 'err', icon: '🚨',
+    nodeClass: 'fault-err', dotClass: 'status-offline'
+  },
+  modbus_conflict: {
+    target: 'sensor', name: 'Modbus RTU从站地址被重置',
+    bannerText: '温湿度传感器 通信超时 数据归零',
+    bannerSub: '根因：Modbus RTU从站地址被重置为出厂默认0',
+    level: 'warn', icon: '⚠️',
+    nodeClass: 'fault-warn', dotClass: 'status-warn'
+  },
+  mqtt_auth: {
+    target: 'robot', name: 'MQTT Broker认证策略变更',
+    bannerText: 'AGV搬运机器人 MQTT 连接被拒绝',
+    bannerSub: '根因：Broker认证策略变更为TLS证书认证',
+    level: 'err', icon: '🚨',
+    nodeClass: 'fault-err', dotClass: 'status-offline'
+  }
+};
+
+// ===== 拖拽 =====
+document.querySelectorAll('.device-item').forEach(item=>{
+  item.addEventListener('dragstart',e=>{e.dataTransfer.setData('type',item.dataset.type);e.dataTransfer.setData('name',item.dataset.name);});
+});
+canvas.addEventListener('dragover',e=>e.preventDefault());
+canvas.addEventListener('drop',e=>{
+  e.preventDefault();
+  const type=e.dataTransfer.getData('type'),name=e.dataTransfer.getData('name');
+  if(!type)return;
+  const rect=canvas.getBoundingClientRect();
+  createNode(type,name,e.clientX-rect.left,e.clientY-rect.top);
+  document.getElementById('connectHint').style.display='none';
+  refreshDataPanel();
+});
+
+function createNode(type,name,x,y){
+  const id=++nodeIdCounter;
+  const proto=protocolMap[type];
+  // 边界限制：节点在画布内（节点中心点距边界至少 70px，留出视觉边距）
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  x=Math.max(75,Math.min(x,cw-75));
+  y=Math.max(50,Math.min(y,ch-50));
+  const node={id,type,name,x,y,protocol:proto.protocol,ip:proto.ip,points:proto.points,status:'online',fault:false};
+  nodes.push(node);
+  const el=document.createElement('div');
+  el.className=`topo-node node-${type}`;
+  el.id=`node-${id}`;
+  el.style.left=(x-55)+'px';el.style.top=(y-30)+'px';
+  el.innerHTML=`<div class="status-dot status-online" id="dot-${id}"></div><div class="node-icon">${getIcon(type)}</div><div class="node-name">${name}</div><div class="node-protocol">${proto.protocol}</div>`;
+  el.addEventListener('mousedown',e=>{if(connectMode){handleConnectClick(id);return;}dragNode=node;dragOffset={x:e.clientX-el.offsetLeft,y:e.clientY-el.offsetTop};selectNode(id);});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();selectNode(id);showContextMenu(e.clientX,e.clientY);});
+  canvas.appendChild(el);
+  updateMetrics();
+  return node;
+}
+function getIcon(type){return{plc:'🔧',sensor:'🌡️',camera:'📷',robot:'🤖',gateway:'📡',server:'🖥️'}[type]||'📦';}
+
+document.addEventListener('mousemove',e=>{
+  if(!dragNode)return;
+  const el=document.getElementById(`node-${dragNode.id}`);
+  const rect=canvas.getBoundingClientRect();
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  // 限制在画布范围内（节点宽110px，高60px）
+  let nx=e.clientX-rect.left-55,ny=e.clientY-rect.top-30;
+  nx=Math.max(0,Math.min(nx,cw-110));
+  ny=Math.max(0,Math.min(ny,ch-60));
+  el.style.left=nx+'px';el.style.top=ny+'px';
+  dragNode.x=nx+55;dragNode.y=ny+30;
+  redrawLines();
+});
+document.addEventListener('mouseup',()=>{dragNode=null;});
+
+function toggleConnectMode(){connectMode=!connectMode;document.getElementById('btnConnect').classList.toggle('active',connectMode);document.getElementById('modeIndicator').classList.toggle('show',connectMode);connectSource=null;document.querySelectorAll('.topo-node').forEach(n=>n.classList.remove('selected'));}
+function handleConnectClick(id){if(!connectSource){connectSource=id;document.getElementById(`node-${id}`).classList.add('selected');}else if(connectSource!==id){addConnection(connectSource,id);document.getElementById(`node-${connectSource}`).classList.remove('selected');connectSource=null;toggleConnectMode();}}
+function addConnection(fromId,toId){if(connections.find(c=>(c.from===fromId&&c.to===toId)||(c.from===toId&&c.to===fromId)))return;connections.push({from:fromId,to:toId,status:'active'});redrawLines();updateMetrics();}
+
+function redrawLines(){
+  svgLines.innerHTML='';
+  connections.forEach(conn=>{
+    const f=nodes.find(n=>n.id===conn.from),t=nodes.find(n=>n.id===conn.to);
+    if(!f||!t)return;
+    const fe=document.getElementById(`node-${f.id}`),te=document.getElementById(`node-${t.id}`);
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',parseInt(fe.style.left)+50);line.setAttribute('y1',parseInt(fe.style.top)+30);
+    line.setAttribute('x2',parseInt(te.style.left)+50);line.setAttribute('y2',parseInt(te.style.top)+30);
+    if(faultActive&&(conn.from===faultNodeId||conn.to===faultNodeId)){
+      line.classList.add('fault');
+    }else{line.classList.add('active');}
+    svgLines.appendChild(line);
+  });
+}
+
+function loadPresetTopology(){
+  clearAll();
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  // 节点边界限制：距画布边缘至少 110px（视觉上更舒服，居中显示）
+  const leftPad=120, topPad=80, bottomPad=100, rightPad=120;
+  const maxX=cw-rightPad;
+  const maxY=ch-bottomPad;
+  const minY=topPad+20;
+  // 计算水平居中区：让网关、服务器均匀分布在画布中段
+  const midX=(leftPad+maxX)/2;
+  // 设备纵向布局（左侧三个传感器/PLC/相机，垂直均匀）
+  const rowYs=[ch*.20, ch*.45, ch*.70];
+  const s=createNode('sensor','温湿度传感器',leftPad,Math.max(minY,rowYs[0]));
+  const p=createNode('plc','S7-1200 PLC',leftPad,Math.max(minY,Math.min(rowYs[1],maxY*.5)));
+  const c=createNode('camera','视觉质检仪',leftPad,Math.max(minY,Math.min(rowYs[2],maxY)));
+  // AGV 放在画布下方中央偏左
+  const r=createNode('robot','AGV搬运机器人',Math.max(leftPad+20,Math.min(midX*.7,maxX*.4)),maxY);
+  // 网关放画布中央
+  const g=createNode('gateway','边缘网关',midX,Math.max(minY,ch*.42));
+  // 云平台服务器放在右侧中部（确保在画布内）
+  const sv=createNode('server','云平台服务器',maxX,Math.max(minY,Math.min(ch*.42,maxY*.45)));
+  setTimeout(()=>{addConnection(s.id,g.id);addConnection(p.id,g.id);addConnection(c.id,g.id);addConnection(r.id,g.id);addConnection(g.id,sv.id);},50);
+  document.getElementById('connectHint').style.display='none';
+  document.getElementById('btnFault').style.display='';
+  refreshDataPanel();
+}
+
+function clearAll(){
+  nodes=[];connections=[];nodeIdCounter=0;
+  document.querySelectorAll('.topo-node').forEach(n=>n.remove());
+  svgLines.innerHTML='';
+  document.getElementById('dataBody').innerHTML='';
+  document.getElementById('connectHint').style.display='';
+  document.getElementById('nodeProps').classList.remove('show');
+  document.getElementById('btnFault').style.display='none';
+  document.getElementById('noDataHint').style.display='';
+  stopSimulation();clearFault();updateMetrics();
+}
+
+function selectNode(id){
+  document.querySelectorAll('.topo-node').forEach(n=>n.classList.remove('selected'));
+  const el=document.getElementById(`node-${id}`);
+  if(el)el.classList.add('selected');
+  const node=nodes.find(n=>n.id===id);
+  if(node)showNodeProps(node);
+}
+function showNodeProps(node){
+  const p=document.getElementById('nodeProps');
+  document.getElementById('propsTitle').textContent=node.name;
+  document.getElementById('propType').textContent=node.type.toUpperCase();
+  document.getElementById('propProto').textContent=node.protocol;
+  document.getElementById('propIP').textContent=node.ip;
+  document.getElementById('propPoints').textContent=node.points;
+  document.getElementById('propStatus').textContent=node.fault?(faultType==='modbus_conflict'?'⚠️ 通信超时':'🔴 故障'):(node.status==='online'?'🟢 在线':'🔴 离线');
+  p.classList.add('show');
+}
+function showContextMenu(x,y){const m=document.getElementById('contextMenu');m.style.left=x+'px';m.style.top=y+'px';m.style.display='block';}
+document.addEventListener('click',()=>{document.getElementById('contextMenu').style.display='none';});
+function deleteSelected(){
+  const sel=document.querySelector('.topo-node.selected');if(!sel)return;
+  const id=parseInt(sel.id.split('-')[1]);
+  if(faultNodeId===id)clearFault();
+  nodes=nodes.filter(n=>n.id!==id);connections=connections.filter(c=>c.from!==id&&c.to!==id);
+  sel.remove();redrawLines();document.getElementById('nodeProps').classList.remove('show');updateMetrics();refreshDataPanel();
+}
+function disconnectSelected(){const sel=document.querySelector('.topo-node.selected');if(!sel)return;const id=parseInt(sel.id.split('-')[1]);connections=connections.filter(c=>c.from!==id&&c.to!==id);redrawLines();}
+function showDeviceInfo(){const sel=document.querySelector('.topo-node.selected');if(!sel)return;const id=parseInt(sel.id.split('-')[1]);const node=nodes.find(n=>n.id===id);if(node)alert(`设备详情\n\n名称：${node.name}\n协议：${node.protocol}\nIP：${node.ip}\n数据点：${node.points}\n状态：${node.fault?'故障':node.status}`);}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(connectMode)toggleConnectMode();if(document.getElementById('faultModal').classList.contains('show'))closeFaultModal();}});
+
+// ===== 数据采集联动 =====
+function getActiveDataDevices(){return nodes.filter(n=>['plc','sensor','camera','robot'].includes(n.type));}
+function refreshDataPanel(){
+  const devs=getActiveDataDevices();
+  if(devs.length===0||!simulationRunning){document.getElementById('dataBody').innerHTML='';document.getElementById('noDataHint').style.display=devs.length===0||!simulationRunning?'':'none';return;}
+  document.getElementById('noDataHint').style.display='none';generateData();
+}
+
+function generateData(){
+  const devs=getActiveDataDevices();if(devs.length===0)return;
+  const tbody=document.getElementById('dataBody');
+  const now=new Date();const timeStr=now.toLocaleTimeString('zh-CN');
+  const dataMap={
+    sensor:[
+      {point:'温度(℃)',gen:()=>(22+Math.random()*6).toFixed(1),cls:'val-ok'},
+      {point:'湿度(%RH)',gen:()=>(45+Math.random()*20).toFixed(1),cls:'val-ok'}
+    ],
+    plc:[
+      {point:'运行状态',gen:()=>Math.random()>.1?'运行中':'停机',cls:()=>Math.random()>.1?'val-ok':'val-warn'},
+      {point:'计数(件)',gen:()=>Math.floor(1000+Math.random()*500),cls:'val-ok'},
+      {point:'主轴转速',gen:()=>Math.floor(1200+Math.random()*200),cls:'val-ok'}
+    ],
+    camera:[
+      {point:'缺陷数',gen:()=>Math.floor(Math.random()*5),cls:'val-ok'},
+      {point:'合格率(%)',gen:()=>(95+Math.random()*5).toFixed(1),cls:'val-ok'},
+      {point:'检测结果',gen:()=>Math.random()>.05?'PASS':'FAIL',cls:()=>Math.random()>.05?'val-ok':'val-warn'}
+    ],
+    robot:[
+      {point:'电量(%)',gen:()=>Math.floor(60+Math.random()*40),cls:'val-ok'},
+      {point:'位置',gen:()=>['A区','B区','C区','充电区'][Math.floor(Math.random()*4)],cls:'val-ok'},
+      {point:'任务状态',gen:()=>['搬运中','空闲','充电中'][Math.floor(Math.random()*3)],cls:'val-ok'}
+    ]
+  };
+  let rows=[];
+  devs.forEach(dev=>{
+    const configs=dataMap[dev.type]||[];
+    const filtered=currentFilter==='all'?configs:configs.filter(c=>{
+      if(currentFilter==='Modbus')return dev.type==='sensor';
+      if(currentFilter==='OPC UA')return dev.type==='plc';
+      if(currentFilter==='MQTT')return['camera','robot'].includes(dev.type);
+      return true;
+    });
+    filtered.forEach(cfg=>{
+      let val,cls,trClass='';
+      if(dev.fault){
+        if(faultType==='mqtt_topic'){val='---';cls='val-err';trClass='fault-row';}
+        else if(faultType==='modbus_conflict'){
+          if(dev.type==='sensor'){
+            // 传感器从站地址被重置，通信超时
+            if(cfg.point==='温度(℃)'){val='0.0';cls='val-corrupt';trClass='warn-row';}
+            else if(cfg.point==='湿度(%RH)'){val='0.0';cls='val-corrupt';trClass='warn-row';}
+            else{val='超时';cls='val-err';trClass='fault-row';}
+          }else{val=cfg.gen();cls=typeof cfg.cls==='function'?cfg.cls():cfg.cls;}
+        }
+        else if(faultType==='mqtt_auth'){val='---';cls='val-err';trClass='fault-row';}
+      }else{val=cfg.gen();cls=typeof cfg.cls==='function'?cfg.cls():cfg.cls;}
+      const statusHtml=dev.fault?(faultType==='modbus_conflict'?'<span class="val-warn">⚠ 超时</span>':'<span class="val-err">✗ 中断</span>'):'<span class="val-ok">✓</span>';
+      rows.push(`<tr class="${trClass}"><td>${dev.name}</td><td>${dev.protocol}</td><td>${cfg.point}</td><td class="${cls}">${val}</td><td>${timeStr}</td><td>${statusHtml}</td></tr>`);
+    });
+  });
+  tbody.innerHTML=rows.join('');
+  document.getElementById('noDataHint').style.display='none';
+  const totalRows=rows.length;
+  const faultRows=rows.filter(r=>r.includes('val-err')||r.includes('val-corrupt')).length;
+  const okRate=totalRows>0?Math.round((totalRows-faultRows)/totalRows*100):0;
+  document.getElementById('metricOk').textContent=okRate+'%';
+  document.getElementById('metricOk').style.color=okRate<100?'#ff1744':'#42a5f5';
+}
+
+function filterProtocol(btn,proto){currentFilter=proto;document.querySelectorAll('.protocol-tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(simulationRunning)generateData();}
+
+function toggleSimulation(){if(simulationRunning)stopSimulation();else startSimulation();}
+function startSimulation(){
+  if(nodes.length===0){alert('请先搭建拓扑');return;}
+  simulationRunning=true;
+  const btn=document.getElementById('btnSimulate');
+  btn.textContent='⏸ 停止采集';btn.style.background='#b71c1c';btn.style.borderColor='#ff1744';btn.style.color='#fff';
+  simInterval=setInterval(()=>{if(simulationRunning)generateData();},1500);
+  particleInterval=setInterval(spawnParticles,800);
+  checkRepairStatus();generateData();
+}
+function stopSimulation(){
+  simulationRunning=false;
+  const btn=document.getElementById('btnSimulate');
+  btn.textContent='▶ 启动采集';btn.style.background='';btn.style.borderColor='';btn.style.color='';
+  if(simInterval)clearInterval(simInterval);if(particleInterval)clearInterval(particleInterval);
+  simInterval=null;particleInterval=null;
+  document.getElementById('metricRate').textContent='0';
+  document.getElementById('noDataHint').style.display='';
+}
+
+function spawnParticles(){
+  connections.forEach(conn=>{
+    const skip=faultActive&&(conn.from===faultNodeId||conn.to===faultNodeId);
+    if(conn.status!=='active'||skip)return;
+    const f=nodes.find(n=>n.id===conn.from),t=nodes.find(n=>n.id===conn.to);
+    if(!f||!t)return;
+    const fe=document.getElementById(`node-${f.id}`),te=document.getElementById(`node-${t.id}`);
+    const fx=parseInt(fe.style.left)+50,fy=parseInt(fe.style.top)+30;
+    const tx=parseInt(te.style.left)+50,ty=parseInt(te.style.top)+30;
+    let pClass='particle-mqtt';
+    if(f.protocol.includes('Modbus')||t.protocol.includes('Modbus'))pClass='particle-modbus';
+    else if(f.protocol.includes('OPC')||t.protocol.includes('OPC'))pClass='particle-opcua';
+    const p=document.createElement('div');p.className=`data-particle ${pClass}`;
+    p.style.left=fx+'px';p.style.top=fy+'px';canvas.appendChild(p);
+    const dur=600+Math.random()*400,st=performance.now();
+    function anim(time){const prog=Math.min((time-st)/dur,1);p.style.left=(fx+(tx-fx)*prog)+'px';p.style.top=(fy+(ty-fy)*prog)+'px';p.style.opacity=1-prog*.5;if(prog<1)requestAnimationFrame(anim);else p.remove();}
+    requestAnimationFrame(anim);
+  });
+}
+
+function updateMetrics(){
+  const devs=getActiveDataDevices();
+  document.getElementById('metricDevices').textContent=devs.filter(n=>!n.fault).length;
+  const pts=devs.reduce((s,n)=>{if(n.type==='plc')return s+100;if(n.type==='sensor')return s+2;if(n.type==='camera')return s+3;if(n.type==='robot')return s+3;return s;},0);
+  document.getElementById('metricPoints').textContent=pts;
+  document.getElementById('metricRate').textContent=simulationRunning?'1':'0';
+  if(simulationRunning)document.getElementById('metricOk').textContent=faultActive?'75%':'100%';
+}
+
+// ===== 故障系统 =====
+function showFaultModal(){document.getElementById('faultModal').classList.add('show');}
+function closeFaultModal(){document.getElementById('faultModal').classList.remove('show');}
+
+function injectFault(type){
+  closeFaultModal();
+  const def=faultDefs[type];
+  let targetNode=nodes.find(n=>n.type===def.target);
+  if(!targetNode){alert(`请先在拓扑中添加${def.target==='camera'?'视觉质检仪':def.target==='sensor'?'温湿度传感器':def.target==='plc'?'S7-1200 PLC':'AGV机器人'}`);return;}
+  if(faultActive)clearFault();
+
+  faultActive=true;faultNodeId=targetNode.id;faultType=type;
+  targetNode.fault=true;
+
+  const el=document.getElementById(`node-${targetNode.id}`);
+  el.classList.add(def.nodeClass);
+  document.getElementById(`dot-${targetNode.id}`).className='status-dot '+def.dotClass;
+
+  const banner=document.getElementById('faultBanner');
+  banner.className='fault-banner show level-'+def.level;
+  document.getElementById('fbIcon').textContent=def.icon;
+  document.getElementById('faultText').textContent=def.bannerText;
+  document.getElementById('faultSub').textContent=def.bannerSub;
+
+  const badge=document.getElementById('statusBadge');
+  badge.textContent='⚠️ 故障告警';badge.className='badge fault';
+  document.getElementById('btnFault').textContent='✅ 恢复故障';
+
+  redrawLines();updateMetrics();generateData();
+}
+
+function clearFault(){
+  if(!faultActive)return;
+  faultActive=false;
+  if(faultNodeId){
+    const node=nodes.find(n=>n.id===faultNodeId);
+    if(node){
+      node.fault=false;
+      const el=document.getElementById(`node-${node.id}`);
+      if(el){el.classList.remove('fault-err','fault-warn','fault-node');document.getElementById(`dot-${node.id}`).className='status-dot status-online';}
+    }
+  }
+  faultNodeId=null;faultType=null;
+  document.getElementById('faultBanner').className='fault-banner';
+  const badge=document.getElementById('statusBadge');badge.textContent='系统正常';badge.className='badge';
+  document.getElementById('btnFault').textContent='⚡ 注入故障';
+  redrawLines();updateMetrics();if(simulationRunning)generateData();
+}
+
+function openDiagnosis(){
+  const fn=nodes.find(n=>n.id===faultNodeId);
+  localStorage.setItem('fault_state',JSON.stringify({
+    active:true,
+    faultType:faultType,
+    deviceName:fn?fn.name:'未知设备',
+    protocol:fn?fn.protocol:'未知',
+    faultName:faultDefs[faultType].name,
+    timestamp:new Date().toISOString()
+  }));
+  window.open('./fault-diagnosis.html','_blank');
+}
+function dismissFault(){document.getElementById('faultBanner').classList.remove('show');}
+
+function checkRepairStatus(){
+  const repaired=localStorage.getItem('fault_repaired');
+  if(repaired==='true'){
+    clearFault();localStorage.removeItem('fault_repaired');localStorage.removeItem('fault_state');
+    const badge=document.getElementById('statusBadge');badge.textContent='✅ 故障已修复';badge.style.background='#00e676';
+    setTimeout(()=>{badge.textContent='系统正常';badge.style.background='';},3000);
+  }
+}
+setInterval(checkRepairStatus,2000);
+window.addEventListener('focus',checkRepairStatus);
+
+// ===== 通知父窗口：仿真页面已就绪 =====
+try {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      type: 'iiot-sim-ready',
+      source: 'network-topo',
+      payload: {
+        timestamp: new Date().toISOString(),
+        url: location.href,
+        studentId: localStorage.getItem('iiot_current_student_id') || 'none',
+      }
+    }, '*');
+    console.log('[network-topo] 已发送就绪信号到父窗口');
+  } else {
+    console.log('[network-topo] 在独立窗口中运行（非 iframe 嵌入）');
+  }
+} catch (e) {
+  console.error('[network-topo] 发送就绪信号失败:', e);
+}
+</script>
+</body>
+</html>

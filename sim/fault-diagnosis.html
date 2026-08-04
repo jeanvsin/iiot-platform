@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>故障诊断与AI评价 — 项目二子任务3</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f1f5f9;color:#0f172a;overflow:hidden;height:100vh;font-size:15px;line-height:1.6;}
+  /* top-bar：白底深字 + 蓝色 accent，与主平台 header 风格统一 */
+  .top-bar{height:64px;background:#ffffff;display:flex;align-items:center;padding:0 24px;border-bottom:2px solid #e2e8f0;justify-content:space-between;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+  .top-bar h1{font-size:18px;font-weight:600;color:#0f172a;letter-spacing:.5px;display:flex;align-items:center;gap:10px;}
+  .top-bar h1::before{content:"";display:inline-block;width:4px;height:20px;background:linear-gradient(180deg,#0ea5e9,#0369a1);border-radius:2px;}
+  .top-bar .phase-badge{font-size:13px;padding:4px 14px;border-radius:14px;font-weight:600;}
+  .top-bar .version-tag{background:#e0f2fe;color:#0369a1;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;letter-spacing:.5px;}
+  .phase-fault{background:#b91c1c;color:#fee2e2;}.phase-ai{background:#0369a1;color:#dbeafe;}
+  .phase-fix{background:#ea580c;color:#ffedd5;}.phase-eval{background:#15803d;color:#dcfce7;}
+  .phase-analysis{background:#6d28d9;color:#ede9fe;}
+  .main{display:flex;height:calc(100vh - 64px);background:#f1f5f9;}
+  .flow-nav{width:200px;background:#fff;border-right:1px solid #e2e8f0;padding:18px 0;display:flex;flex-direction:column;box-shadow:2px 0 4px rgba(15,23,42,.04);}
+  .flow-step{padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:all .2s;border-left:3px solid transparent;position:relative;color:#334155;}
+  .flow-step:hover{background:#f1f5f9;}.flow-step.active{background:#e0f2fe;border-left-color:#0ea5e9;}.flow-step.done{border-left-color:#10b981;}
+  .flow-step .step-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;}
+  .flow-step .step-info .step-title{font-size:14px;font-weight:600;color:#0f172a;}
+  .flow-step .step-info .step-desc{font-size:12px;color:#64748b;margin-top:2px;}
+  .step-num-pending{background:#e2e8f0;color:#475569;}.step-num-active{background:#0369a1;color:#fff;}.step-num-done{background:#10b981;color:#fff;}
+  .flow-step:not(:last-child)::after{content:'';position:absolute;left:33px;bottom:-2px;width:2px;height:8px;background:#e2e8f0;}
+  .content-area{flex:1;overflow-y:auto;padding:28px;position:relative;background:#f1f5f9;}
+  .content-area::-webkit-scrollbar{width:8px;}.content-area::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}.content-area::-webkit-scrollbar-track{background:#f1f5f9;}
+  .phase-panel{display:none;animation:fadeIn .4s ease;}.phase-panel.active{display:block;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .fault-alert{background:linear-gradient(135deg,#450a0a,#7f1d1d);border:1px solid #b91c1c;border-radius:12px;padding:20px;margin-bottom:20px;}
+  .fault-alert h2{color:#fca5a5;font-size:18px;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-weight:600;}
+  .fault-alert .fault-icon{font-size:28px;animation:shake .5s infinite;}
+  @keyframes shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-5deg)}75%{transform:rotate(5deg)}}
+  .fault-detail{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
+  .fault-item{background:rgba(127,29,29,.3);border-radius:8px;padding:12px;}
+  .fault-item .label{font-size:12px;color:#fca5a5;margin-bottom:4px;}
+  .fault-item .value{font-size:14px;color:#fecaca;font-weight:600;}
+  .fault-source{background:rgba(234,88,12,.1);border:1px solid #ea580c;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#fed7aa;display:none;}
+  .fault-source.show{display:block;}.fault-source .fs-label{color:#fb923c;font-weight:600;margin-bottom:4px;}
+  .data-flow-display{background:#0c1e3a;border:1px solid #1e3a5f;border-radius:12px;padding:20px;margin-top:16px;}
+  .data-flow-display h3{color:#7dd3fc;font-size:14px;margin-bottom:12px;font-weight:600;}
+  .flow-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .flow-node{background:#082f49;border-radius:8px;padding:8px 12px;font-size:12px;color:#cbd5e1;min-width:80px;text-align:center;}
+  .flow-node.broken{border:1px solid #ef4444;color:#fca5a5;animation:bp 1.5s infinite;}
+  .flow-node.warn-broken{border:1px solid #f59e0b;color:#fcd34d;animation:bp 2s infinite;}
+  @keyframes bp{0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)}50%{box-shadow:0 0 12px rgba(239,68,68,.4)}}
+  .flow-arrow{color:#1e3a5f;font-size:16px;}.flow-arrow.broken{color:#ef4444;}.flow-arrow.warn-broken{color:#f59e0b;}
+  .flow-status{font-size:11px;padding:2px 8px;border-radius:10px;margin-left:auto;}
+  .flow-ok{background:#15803d;color:#86efac;}.flow-fail{background:#b91c1c;color:#fecaca;}.flow-warn{background:#ea580c;color:#fed7aa;}
+  .flow-repaired{background:#15803d;color:#86efac;animation:rf 1s ease 3;}
+  @keyframes rf{0%,100%{opacity:1}50%{opacity:.5}}
+  .ai-analysis{background:linear-gradient(135deg,#082f49,#0c4a6e);border:1px solid #0369a1;border-radius:12px;padding:20px;}
+  .ai-header{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .ai-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .ai-name{font-size:14px;font-weight:600;color:#7dd3fc;}
+  .ai-thinking{background:rgba(14,165,233,.1);border-radius:8px;padding:16px;margin-bottom:12px;}
+  .ai-thinking p{font-size:13px;color:#bae6fd;line-height:1.8;margin-bottom:8px;}
+  .ai-thinking .hl{color:#fbbf24;font-weight:600;}
+  .analysis-steps{margin-top:16px;}
+  .a-step{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #1e3a5f33;}
+  .a-step .a-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;background:#0369a1;color:#fff;}
+  .a-step .a-content{flex:1;}.a-step .a-title{font-size:14px;color:#f0f9ff;font-weight:600;margin-bottom:2px;}
+  .a-step .a-desc{font-size:12px;color:#7dd3fc;}.a-step .a-result{font-size:13px;color:#fbbf24;margin-top:4px;font-weight:600;}
+  .confidence-bar{margin-top:16px;background:#0c1e3a;border-radius:8px;padding:12px;}
+  .confidence-bar .cb-label{font-size:13px;color:#7dd3fc;margin-bottom:6px;}
+  .confidence-bar .cb-track{height:8px;background:#082f49;border-radius:4px;overflow:hidden;}
+  .confidence-bar .cb-fill{height:100%;background:linear-gradient(90deg,#fbbf24,#10b981);border-radius:4px;transition:width 1.5s ease;}
+  .confidence-bar .cb-value{font-size:20px;font-weight:700;color:#10b981;margin-top:4px;}
+  .fix-step{background:#0c1e3a;border:1px solid #1e3a5f;border-radius:12px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .3s;}
+  .fix-step:hover{border-color:#f59e0b;}.fix-step.active{border-color:#f59e0b;background:#422006;}.fix-step.completed{border-color:#10b981;background:#052e16;}
+  .fix-step .fs-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .fix-step .fs-num{width:28px;height:28px;border-radius:50%;background:#ea580c;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;}
+  .fix-step.completed .fs-num{background:#15803d;}
+  .fix-step .fs-title{font-size:14px;font-weight:600;color:#f0f9ff;}
+  .fix-step .fs-desc{font-size:13px;color:#7dd3fc;line-height:1.6;padding-left:38px;}
+  .fix-action{margin-top:12px;padding-left:38px;}
+  .fix-action .terminal{background:#000;border-radius:6px;padding:12px;font-family:'Courier New',monospace;font-size:13px;color:#86efac;min-height:60px;}
+  .fix-action .terminal .cmd{color:#fbbf24;}.fix-action .terminal .result{color:#86efac;}.fix-action .terminal .error{color:#fca5a5;}
+  .fix-action .btn-fix{margin-top:8px;background:#ea580c;border:none;color:#fff;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;}
+  .fix-action .btn-fix:hover{background:#f97316;}.fix-action .btn-fix:disabled{background:#475569;cursor:not-allowed;}
+  .eval-score{background:linear-gradient(135deg,#052e16,#14532d);border:1px solid #16a34a;border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;}
+  .eval-score .score-circle{width:120px;height:120px;border-radius:50%;background:conic-gradient(#10b981 var(--score-deg),#166534 0deg);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;}
+  .eval-score .score-inner{width:96px;height:96px;border-radius:50%;background:#052e16;display:flex;align-items:center;justify-content:center;flex-direction:column;}
+  .eval-score .score-num{font-size:36px;font-weight:800;color:#10b981;}.eval-score .score-label{font-size:12px;color:#86efac;}
+  .eval-dims{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;}
+  .eval-dim{background:#0c1e3a;border:1px solid #1e3a5f;border-radius:10px;padding:14px;}
+  .eval-dim .dim-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .eval-dim .dim-name{font-size:14px;color:#f0f9ff;font-weight:600;}.eval-dim .dim-score{font-size:16px;font-weight:700;color:#38bdf8;}
+  .eval-dim .dim-bar{height:6px;background:#082f49;border-radius:3px;overflow:hidden;}
+  .eval-dim .dim-fill{height:100%;border-radius:3px;transition:width 1s ease;}
+  .eval-dim .dim-comment{font-size:12px;color:#7dd3fc;margin-top:6px;line-height:1.5;}
+  .eval-summary{background:#0c1e3a;border:1px solid #1e3a5f;border-radius:12px;padding:16px;}
+  .eval-summary h3{color:#7dd3fc;font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:6px;font-weight:600;}
+  .eval-summary .si{display:flex;gap:8px;margin-bottom:8px;font-size:13px;line-height:1.6;}
+  .eval-summary .si-icon{font-size:14px;flex-shrink:0;margin-top:2px;}.eval-summary .si-text{color:#cbd5e1;}
+  .log-panel{width:280px;background:#0c1e3a;border-left:1px solid #1e3a5f;display:flex;flex-direction:column;}
+  .log-panel .log-header{padding:12px 16px;border-bottom:1px solid #1e3a5f;}.log-panel .log-header h3{font-size:14px;color:#7dd3fc;font-weight:600;}
+  .log-body{flex:1;overflow-y:auto;padding:8px 12px;}.log-body::-webkit-scrollbar{width:4px;}.log-body::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:2px;}
+  .log-entry{padding:6px 0;border-bottom:1px solid #1e3a5f33;font-size:12px;line-height:1.5;}
+  .log-entry .log-time{color:#64748b;font-size:11px;}.log-entry .log-msg{color:#cbd5e1;}
+  .log-entry .log-msg.warn{color:#fbbf24;}.log-entry .log-msg.err{color:#fca5a5;}.log-entry .log-msg.ok{color:#10b981;}.log-entry .log-msg.info{color:#38bdf8;}
+  .bottom-actions{position:absolute;bottom:24px;right:24px;display:flex;gap:8px;}
+  .btn-next{background:linear-gradient(135deg,#0369a1,#0284c7);border:none;color:#fff;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;}
+  .btn-next:hover{background:linear-gradient(135deg,#0284c7,#0ea5e9);transform:translateY(-1px);}.btn-next:disabled{background:#475569;cursor:not-allowed;transform:none;}
+  .btn-prev{background:transparent;border:1px solid #1e3a5f;color:#7dd3fc;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:13px;}
+  .btn-prev:hover{border-color:#38bdf8;color:#f0f9ff;}
+  .repair-toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#15803d,#16a34a);border:2px solid #10b981;border-radius:16px;padding:32px 48px;text-align:center;z-index:100;display:none;animation:toastIn .5s ease;}
+  .repair-toast.show{display:block;}
+  @keyframes toastIn{from{opacity:0;transform:translate(-50%,-50%) scale(.8)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+  .repair-toast .rt-icon{font-size:48px;margin-bottom:12px;}.repair-toast .rt-title{font-size:20px;font-weight:700;color:#86efac;margin-bottom:8px;}
+  .repair-toast .rt-desc{font-size:13px;color:#bbf7d0;margin-bottom:16px;}
+  .repair-toast .rt-btn{background:#10b981;color:#052e16;border:none;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;}
+  .repair-toast .rt-btn:hover{background:#34d399;}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="top-bar">
+  <h1>🔍 故障诊断与AI智能评价</h1>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <span class="version-tag" id="versionTag">v2.0 浅色版</span>
+    <span class="phase-badge phase-fault" id="phaseBadge">⚠️ 故障发生</span>
+  </div>
+</div>
+<div class="main">
+  <div class="flow-nav">
+    <div class="flow-step active" onclick="goToPhase(0)"><div class="step-num step-num-active">1</div><div class="step-info"><div class="step-title">故障现象</div><div class="step-desc" id="navDesc1">数据异常</div></div></div>
+    <div class="flow-step" onclick="goToPhase(1)"><div class="step-num step-num-pending">2</div><div class="step-info"><div class="step-title">AI诊断分析</div><div class="step-desc">智能故障定位</div></div></div>
+    <div class="flow-step" onclick="goToPhase(2)"><div class="step-num step-num-pending">3</div><div class="step-info"><div class="step-title">排障操作</div><div class="step-desc">四步排障法</div></div></div>
+    <div class="flow-step" onclick="goToPhase(3)"><div class="step-num step-num-pending">4</div><div class="step-info"><div class="step-title">AI评价</div><div class="step-desc">多维综合评价</div></div></div>
+    <div class="flow-step" onclick="goToPhase(4)"><div class="step-num step-num-pending">5</div><div class="step-info"><div class="step-title">成绩及分析</div><div class="step-desc">增值评价</div></div></div>
+  </div>
+  <div class="content-area" id="contentArea">
+    <!-- 阶段0 -->
+    <div class="phase-panel active" id="phase0">
+      <div class="fault-source" id="faultSource"><div class="fs-label">📡 故障来源：拓扑监控平台</div><div id="faultSourceDetail"></div></div>
+      <div class="fault-alert">
+        <h2><span class="fault-icon" id="faIcon">🚨</span> <span id="faTitle">生产数据采集异常告警</span></h2>
+        <p style="color:#ffcdd2;font-size:13px;line-height:1.8;" id="faDesc"></p>
+        <div class="fault-detail">
+          <div class="fault-item"><div class="label">告警时间</div><div class="value" id="fdTime">-</div></div>
+          <div class="fault-item"><div class="label">影响范围</div><div class="value" id="fdScope">-</div></div>
+          <div class="fault-item"><div class="label">故障现象</div><div class="value" style="color:#ff1744;" id="fdPhenomenon">-</div></div>
+          <div class="fault-item"><div class="label">告警等级</div><div class="value" id="fdLevel">-</div></div>
+        </div>
+      </div>
+      <div class="data-flow-display">
+        <h3>📡 实时数据流状态</h3>
+        <div id="flowDiagram"></div>
+      </div>
+    </div>
+    <!-- 阶段1 -->
+    <div class="phase-panel" id="phase1">
+      <div class="ai-analysis">
+        <div class="ai-header"><div class="ai-avatar">🤖</div><div><div class="ai-name">AI 故障诊断助手</div><div style="font-size:11px;color:#7986cb;">正在分析故障数据...</div></div></div>
+        <div class="ai-thinking" id="aiThinking"></div>
+        <div class="analysis-steps" id="analysisSteps"></div>
+        <div class="confidence-bar"><div class="cb-label">AI诊断置信度</div><div class="cb-track"><div class="cb-fill" id="confidenceFill" style="width:0%"></div></div><div class="cb-value" id="confidenceValue">0%</div></div>
+      </div>
+    </div>
+    <!-- 阶段2 -->
+    <div class="phase-panel" id="phase2"><div id="fixContainer"></div></div>
+    <!-- 阶段3 -->
+    <div class="phase-panel" id="phase3">
+      <div class="eval-score">
+        <div class="score-circle" id="scoreCircle" style="--score-deg:0deg;"><div class="score-inner"><div class="score-num" id="scoreNum">0</div><div class="score-label">综合评分</div></div></div>
+        <div style="color:#81c784;font-size:14px;margin-top:8px;" id="evalVerdict">🏆 优秀！</div>
+      </div>
+      <div class="eval-dims" id="evalDims"></div>
+      <div class="eval-summary"><h3>🤖 AI综合评价</h3><div id="evalSummary"></div></div>
+    </div>
+    <!-- 阶段4 - 排障AI成绩及分析 -->
+    <div class="phase-panel" id="phase4">
+      <!-- 顶部班级总览 -->
+      <div style="background:linear-gradient(135deg,#1a0030,#2a1050);border:1px solid #6a1b9a;border-radius:12px;padding:20px;margin-bottom:20px;">
+        <h2 style="color:#ce93d8;font-size:20px;margin-bottom:16px;display:flex;align-items:center;gap:8px;">📊 排障AI成绩及分析 — 数智诊学·增值评价</h2>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+          <div style="background:rgba(74,20,140,.3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:12px;color:#ce93d8;margin-bottom:4px;">班级平均排障时间</div>
+            <div style="font-size:30px;font-weight:800;color:#e1bee7;">311.5<span style="font-size:14px;color:#b39ddb;">秒</span></div>
+          </div>
+          <div style="background:rgba(74,20,140,.3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:12px;color:#ce93d8;margin-bottom:4px;">最高分</div>
+            <div style="font-size:30px;font-weight:800;color:#00e676;">93<span style="font-size:14px;color:#81c784;">分</span></div>
+            <div style="font-size:11px;color:#a5d6a7;">第3组</div>
+          </div>
+          <div style="background:rgba(74,20,140,.3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:12px;color:#ce93d8;margin-bottom:4px;">最低分</div>
+            <div style="font-size:30px;font-weight:800;color:#ffab00;">58<span style="font-size:14px;color:#ffcc80;">分</span></div>
+            <div style="font-size:11px;color:#ffe0b2;">第4组</div>
+          </div>
+          <div style="background:rgba(74,20,140,.3);border-radius:8px;padding:14px;text-align:center;">
+            <div style="font-size:12px;color:#ce93d8;margin-bottom:4px;">班级平均分</div>
+            <div style="font-size:30px;font-weight:800;color:#42a5f5;">75.2<span style="font-size:14px;color:#90caf9;">分</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- 图表区域 2x2网格 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+        <div style="background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;">
+          <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:8px;">📊 各小组排障时间</div>
+          <div id="chartBarTime" style="width:100%;height:300px;"></div>
+        </div>
+        <div style="background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;">
+          <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:8px;">🎯 能力维度分布</div>
+          <div id="chartPieAbility" style="width:100%;height:300px;"></div>
+        </div>
+        <div style="background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;">
+          <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:8px;">🕸️ 各小组综合能力对比</div>
+          <div id="chartRadar" style="width:100%;height:300px;"></div>
+        </div>
+        <div style="background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;">
+          <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:8px;">📈 课前vs课后成绩对比（增值评价）</div>
+          <div id="chartBarGrowth" style="width:100%;height:300px;"></div>
+        </div>
+      </div>
+      <!-- 各小组详细分析卡片 -->
+      <div style="margin-bottom:20px;">
+        <h3 style="color:#ce93d8;font-size:16px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">🔍 各小组详细分析</h3>
+        <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:10px;" id="groupCards">
+          <!-- 第1组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第1组</span>
+              <span style="font-size:13px;background:#1565c0;color:#bbdefb;padding:2px 10px;border-radius:10px;">🏆 良好</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#e0e6ff;font-weight:600;">285s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#42a5f5;font-weight:700;">82分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">MQTT Topic基础概念</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">Modbus通信配置</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">数据链路分析</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">网关Topic映射配置细节</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">间歇性故障排查</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 推荐复习"MQTT Topic映射配置"微课（8分钟），重点练习映射表配置操作
+            </div>
+          </div>
+          <!-- 第2组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第2组</span>
+              <span style="font-size:13px;background:#1b5e20;color:#c8e6c9;padding:2px 10px;border-radius:10px;">✅ 合格</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#e0e6ff;font-weight:600;">342s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#42a5f5;font-weight:700;">74分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">网络拓扑分析</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">协议类型识别</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">虚实对比方法应用</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">网关参数核验</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 推荐"虚实对比排障法"仿真实训，加强仿真与真机的对比练习
+            </div>
+          </div>
+          <!-- 第3组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #00e676;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第3组</span>
+              <span style="font-size:13px;background:#f57f17;color:#fff9c4;padding:2px 10px;border-radius:10px;">⭐ 优秀</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#00e676;font-weight:600;">198s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#00e676;font-weight:700;">93分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">全部知识点和技能点</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">四步排障法运用熟练</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">可挑战更复杂的多故障并发场景</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 推荐进阶任务"多协议并发故障综合排障"，培养复杂场景应对能力
+            </div>
+          </div>
+          <!-- 第4组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #ff9100;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第4组</span>
+              <span style="font-size:13px;background:#b71c1c;color:#ffcdd2;padding:2px 10px;border-radius:10px;">⚠️ 需提升</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#e0e6ff;font-weight:600;">410s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#ffab00;font-weight:700;">58分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">基础网络拓扑认知</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">MQTT Topic映射</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">网关Topic映射配置</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">四步排障法流程</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 建议重新观看"MQTT协议原理"教学视频（12分钟），并完成仿真平台的基础配置练习
+            </div>
+          </div>
+          <!-- 第5组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第5组</span>
+              <span style="font-size:13px;background:#1565c0;color:#bbdefb;padding:2px 10px;border-radius:10px;">✅ 良好</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#e0e6ff;font-weight:600;">256s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#42a5f5;font-weight:700;">79分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">排障流程规范</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">物理层检查方法</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">协议驱动加载机制</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">数据模型映射原理</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 推荐学习"协议驱动加载与配置"专题（10分钟），配合仿真练习巩固
+            </div>
+          </div>
+          <!-- 第6组 -->
+          <div style="min-width:280px;background:#0d1137;border:1px solid #ff9100;border-radius:12px;padding:16px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <span style="font-size:15px;font-weight:700;color:#e0e6ff;">第6组</span>
+              <span style="font-size:13px;background:#b71c1c;color:#ffcdd2;padding:2px 10px;border-radius:10px;">⚠️ 需提升</span>
+            </div>
+            <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px;">
+              <div><span style="color:#90caf9;">排障时间：</span><span style="color:#e0e6ff;font-weight:600;">378s</span></div>
+              <div><span style="color:#90caf9;">综合成绩：</span><span style="color:#ffab00;font-weight:700;">65分</span></div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <div style="font-size:11px;color:#81c784;margin-bottom:4px;">✅ 已掌握</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">故障现象观察方法</span>
+                <span style="font-size:11px;background:rgba(27,94,32,.3);color:#a5d6a7;padding:2px 8px;border-radius:8px;">基础链路追踪</span>
+              </div>
+            </div>
+            <div style="margin-bottom:10px;">
+              <div style="font-size:11px;color:#ffcc80;margin-bottom:4px;">⚠️ 待强化</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">虚实对比排障法</span>
+                <span style="font-size:11px;background:rgba(230,81,0,.2);color:#ffcc80;padding:2px 8px;border-radius:8px;">参数核验系统性</span>
+              </div>
+            </div>
+            <div style="background:rgba(74,20,140,.15);border-radius:8px;padding:8px 10px;font-size:12px;color:#ce93d8;line-height:1.6;">
+              🤖 建议完成"四步排障法"专项训练，重点加强虚实对比环节
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 学习资源推荐区 -->
+      <div style="background:#0d1137;border:1px solid #1e3a5f;border-radius:12px;padding:16px;">
+        <h3 style="color:#ce93d8;font-size:16px;margin-bottom:12px;display:flex;align-items:center;gap:6px;">📚 学习资源推荐</h3>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+          <div style="background:#141a4a;border:1px solid #283593;border-radius:10px;padding:14px;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='#283593'">
+            <div style="font-size:24px;margin-bottom:8px;">🎬</div>
+            <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:4px;">MQTT Topic映射配置</div>
+            <div style="font-size:12px;color:#90caf9;margin-bottom:8px;">微课视频 · 8min</div>
+            <div style="font-size:11px;color:#4fc3f7;">针对：第2、4、6组</div>
+          </div>
+          <div style="background:#141a4a;border:1px solid #283593;border-radius:10px;padding:14px;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='#283593'">
+            <div style="font-size:24px;margin-bottom:8px;">🧪</div>
+            <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:4px;">虚实对比排障法</div>
+            <div style="font-size:12px;color:#90caf9;margin-bottom:8px;">仿真实训 · 15min</div>
+            <div style="font-size:11px;color:#4fc3f7;">针对：第2、4、6组</div>
+          </div>
+          <div style="background:#141a4a;border:1px solid #283593;border-radius:10px;padding:14px;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='#283593'">
+            <div style="font-size:24px;margin-bottom:8px;">📖</div>
+            <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:4px;">网关配置全流程</div>
+            <div style="font-size:12px;color:#90caf9;margin-bottom:8px;">操作指南</div>
+            <div style="font-size:11px;color:#4fc3f7;">针对：第1、4、5组</div>
+          </div>
+          <div style="background:#141a4a;border:1px solid #283593;border-radius:10px;padding:14px;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='#283593'">
+            <div style="font-size:24px;margin-bottom:8px;">🏆</div>
+            <div style="font-size:14px;font-weight:600;color:#e0e6ff;margin-bottom:4px;">多协议并发故障</div>
+            <div style="font-size:12px;color:#90caf9;margin-bottom:8px;">进阶挑战</div>
+            <div style="font-size:11px;color:#4fc3f7;">针对：第3组</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bottom-actions">
+      <button class="btn-prev" id="btnPrev" onclick="prevPhase()" style="display:none;">← 上一步</button>
+      <button class="btn-next" id="btnNext" onclick="nextPhase()">查看AI分析 →</button>
+    </div>
+  </div>
+  <div class="log-panel">
+    <div class="log-header"><h3>📋 实时操作日志</h3></div>
+    <div class="log-body" id="logBody"></div>
+  </div>
+</div>
+<div class="repair-toast" id="repairToast">
+  <div class="rt-icon">🎉</div>
+  <div class="rt-title">故障修复完成！</div>
+  <div class="rt-desc" id="rtDesc">数据流已恢复正常</div>
+  <button class="rt-btn" onclick="returnToTopology()">返回拓扑监控 →</button>
+</div>
+
+<script>
+let currentPhase=0,fixStepsCompleted=[],faultState=null,faultType='';
+const logBody=document.getElementById('logBody');
+
+// ===== 3种故障完整定义 =====
+const scenarios = {
+  mqtt_topic: {
+    faultName:'MQTT Topic映射不一致',
+    icon:'🚨', title:'生产数据采集异常告警',
+    desc:'高速光模块传感器装配产线中，<span style="color:#ffab00;font-weight:600;">视觉质检仪</span>的质检数据突然中断，云平台无法接收来自<span style="color:#ffab00;font-weight:600;">MQTT</span>协议的检测结果，导致整条产线的<span style="color:#ff1744;">良品率统计停滞</span>。作为现场工程师，请立即进行故障诊断与排障！',
+    scope:'视觉质检仪 → 边缘网关 → MQTT Broker → 云平台',
+    phenomenon:'MQTT 数据流中断',
+    level:'🟠 一级（产线停线风险）',
+    flowDiagram:`
+      <div class="flow-row"><div class="flow-node">🌡️ 温湿度传感器</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok1">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node">🔧 S7-1200 PLC</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok2">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node broken" data-flow="fault-node">📷 视觉质检仪</div><div class="flow-arrow broken" data-flow="fault-arrow">✗</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-fail" data-flow="fault-status">✗ 数据中断</span></div>
+      <div class="flow-row"><div class="flow-node">🤖 AGV机器人</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok4">✓ 正常</span></div>`,
+    aiThinking:`<p>📋 <span class="hl">故障现象确认：</span>视觉质检仪通过MQTT协议向边缘网关传输数据中断，其他OPC UA和Modbus RTU设备数据正常。</p>
+      <p>🔍 <span class="hl">排查路径1 — 物理层：</span>网络连通性正常（ping 192.168.1.20 响应正常），排除物理链路故障。</p>
+      <p>🔍 <span class="hl">排查路径2 — 协议层：</span>MQTT Broker连接状态正常（CONNACK Return Code=0），客户端订阅成功，排除Broker连接问题。</p>
+      <p>🔍 <span class="hl">排查路径3 — 应用层：</span>对比视觉质检仪实际发布的Topic与网关订阅的Topic，发现<span class="hl">设备发布 quality_02，网关订阅 quality_01</span>，Topic不一致导致数据无法匹配。</p>
+      <p style="color:#ffab00;font-weight:600;">⚡ 根因判断：视觉质检仪固件升级v1.8→v2.1后，发布Topic从 quality_01 变更为 quality_02，网关Topic映射配置未同步更新，导致MQTT数据采集中断。</p>`,
+    analysisSteps:[
+      {title:'故障隔离',desc:'对比同网关下其他协议设备的采集状态',result:'→ 仅MQTT设备中断，OPC UA/Modbus RTU正常'},
+      {title:'协议诊断',desc:'检查MQTT Broker连接状态与订阅情况',result:'→ Broker连接正常(CONNACK=0)，订阅成功，但无消息到达'},
+      {title:'Topic比对',desc:'对比设备实际发布Topic与网关订阅Topic',result:'→ 设备发布: quality_02 | 网关订阅: quality_01 → Topic不一致！'},
+      {title:'根因定位',desc:'追溯设备固件版本变更记录',result:'→ 固件v1.8→v2.1升级后Topic变更(quality_01→quality_02)，网关映射未同步'}
+    ],
+    confidence:94,
+    fixSteps:[
+      {title:'现象观察 — 确认故障范围',desc:'查看数据采集中断的具体设备和协议，对比其他设备的采集状态。',
+        terminal:`<div><span class="cmd">$</span> 查询网关采集状态...</div><div class="result">设备: S7-1200 PLC [OPC UA] → ✓ 采集中</div><div class="result">设备: 温湿度传感器 [Modbus RTU] → ✓ 采集中</div><div class="error">设备: 视觉质检仪 [MQTT] → ✗ 数据中断 3min</div><div class="result">设备: AGV机器人 [MQTT] → ✓ 采集中</div><div><span class="cmd">→</span> 结论：仅视觉质检仪MQTT数据中断</div>`},
+      {title:'链路追踪 — 逐段验证连通性',desc:'从设备端到Broker逐段检查网络连通性和MQTT连接状态。',
+        terminal:`<div><span class="cmd">$</span> ping 192.168.1.20</div><div class="result">64 bytes from 192.168.1.20: time=1.23ms → 物理层OK</div><div><span class="cmd">$</span> mqtt-client connect --broker 192.168.1.100:1883</div><div class="result">CONNACK Return Code=0 (Accepted) → Broker连接OK</div><div><span class="cmd">$</span> mqtt-client subscribe --topic factory/vision/quality_01</div><div class="result">Subscribe ACK received → 订阅成功</div><div class="error">等待30秒... 无任何消息到达</div><div><span class="cmd">→</span> 结论：物理层通、Broker连接正常，但订阅Topic无数据</div>`},
+      {title:'虚实对比 — 比对设备Topic与网关配置',desc:'通过仿真平台对比设备实际发布的MQTT Topic与网关当前订阅配置。',
+        terminal:`<div><span class="cmd">$</span> 比对 MQTT Topic 映射...</div><div class="result">设备实际发布Topic:</div><div class="error">  factory/vision/quality_02 → 网关订阅: ✗ 未订阅</div><div class="result">网关当前订阅Topic:</div><div class="result">  factory/vision/quality_01 → 设备发布: ✗ 无此Topic</div><div><span class="cmd">$</span> 查询设备固件版本...</div><div class="result">当前版本: v2.1 | 历史版本: v1.8</div><div class="error">变更记录: v2.1 将发布Topic从 quality_01 改为 quality_02</div><div><span class="cmd">→</span> 结论：固件升级后Topic变更，网关映射未同步</div>`},
+      {title:'参数核验 — 更新Topic映射并验证数据流',desc:'在网关中更新MQTT Topic映射配置，重启采集任务。',
+        terminal:`<div><span class="cmd">$</span> 更新网关Topic映射...</div><div class="result">- 取消订阅 factory/vision/quality_01</div><div class="result">+ 新增订阅 factory/vision/quality_02</div><div><span class="cmd">$</span> 重启采集任务...</div><div class="result">[MQTT] 采集任务重启成功</div><div><span class="cmd">$</span> 验证数据流...</div><div class="result">✓ 接收消息: quality_02 | Result=PASS | DefectCount=0</div><div class="result" style="color:#00e676;font-weight:bold;">🎉 数据流恢复！MQTT Topic映射已同步</div>`}
+    ],
+    repairDesc:'MQTT Topic映射已同步，视觉质检仪数据采集恢复正常',
+    eval:{score:90,verdict:'🏆 优秀！故障排除能力突出',
+      dims:[
+        {name:'🔍 故障分析能力',score:92,comment:'能快速缩小故障范围，采用排除法从协议维度精准锁定MQTT问题'},
+        {name:'🔧 排障操作规范',score:88,comment:'四步排障法执行规范，Topic映射更新操作准确无误'},
+        {name:'💡 虚实对比思维',score:95,comment:'善于利用仿真平台对比实际Topic配置，高效发现Topic不一致问题'},
+        {name:'⏱️ 时间效率',score:85,comment:'排障用时4分32秒，在标准时间内完成，效率良好'}
+      ],
+      summary:[
+        {icon:'✅',text:'<strong>亮点：</strong>采用"排除法"快速隔离故障域，从多协议共存环境中精准锁定MQTT问题，体现了良好的系统化思维。'},
+        {icon:'✅',text:'<strong>亮点：</strong>虚实对比环节表现优秀，能主动利用仿真平台的已知Topic比对实际配置，这是工业互联网运维的核心能力。'},
+        {icon:'⚠️',text:'<strong>建议：</strong>可进一步关注MQTT的QoS等级与遗嘱消息机制，实际工业场景中消息可靠性配置也是常见故障源。'},
+        {icon:'📈',text:'<strong>成长轨迹：</strong>相比上次排障任务，故障隔离速度提升23%，根因定位准确率提升15%。'}
+      ]
+    }
+  },
+
+  modbus_conflict: {
+    faultName:'Modbus RTU从站地址被重置',
+    icon:'⚠️', title:'生产数据异常告警',
+    desc:'高速光模块传感器装配产线中，<span style="color:#ffab00;font-weight:600;">温湿度传感器</span>的采集数据突然<span style="color:#ff9100;font-weight:600;">全部归零</span>，温度和湿度读数持续为0。经初步排查，传感器设备指示灯正常但网关无法读取有效数据。怀疑是<span style="color:#ff1744;">Modbus RTU从站地址被重置</span>导致通信失效。',
+    scope:'温湿度传感器 → 边缘网关',
+    phenomenon:'Modbus RTU 通信超时/无响应',
+    level:'🟡 二级（数据质量风险）',
+    flowDiagram:`
+      <div class="flow-row"><div class="flow-node warn-broken" data-flow="fault-node">🌡️ 温湿度传感器</div><div class="flow-arrow warn-broken" data-flow="fault-arrow">⚡</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-warn" data-flow="fault-status">⚠ 通信超时</span></div>
+      <div class="flow-row"><div class="flow-node">🔧 S7-1200 PLC</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok2">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node">📷 视觉质检仪</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok3">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node">🤖 AGV机器人</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok4">✓ 正常</span></div>`,
+    aiThinking:`<p>📋 <span class="hl">故障现象确认：</span>温湿度传感器的温度和湿度读数持续为0，网关采集报通信超时错误。其他设备（PLC=OPC UA、视觉质检仪=MQTT、AGV=MQTT）数据正常。</p>
+      <p>🔍 <span class="hl">排查路径1 — 物理层：</span>检查RS-485总线连接，传感器电源指示灯正常，总线终端电阻120Ω已安装，排除物理链路故障。</p>
+      <p>🔍 <span class="hl">排查路径2 — 协议层：</span>网关向传感器Slave ID=2发送Modbus RTU请求，连续3次超时无响应。检查总线其他设备（无），排除总线冲突。</p>
+      <p>🔍 <span class="hl">排查路径3 — 应用层：</span>使用Modbus调试工具扫描总线，发现<span class="hl">Slave ID=0有响应</span>（出厂默认地址），而网关配置的Slave ID=2无响应。<span class="hl">传感器从站地址被重置为出厂默认值0</span>。</p>
+      <p style="color:#ffab00;font-weight:600;">⚡ 根因判断：温湿度传感器Modbus RTU从站地址被重置为出厂默认值0（原配置为Slave ID=2），可能因设备断电重启后固件异常导致参数丢失，网关仍按ID=2轮询，通信地址不匹配导致无响应。</p>`,
+    analysisSteps:[
+      {title:'故障隔离',desc:'检查不同协议设备的数据质量',result:'→ 仅温湿度传感器(Modbus RTU)通信超时，OPC UA/MQTT正常'},
+      {title:'物理层诊断',desc:'检查RS-485总线和设备状态',result:'→ 总线连接正常，传感器指示灯正常，排除物理层问题'},
+      {title:'地址扫描',desc:'使用调试工具扫描总线上的Modbus从站',result:'→ Slave ID=0有响应（出厂默认），Slave ID=2无响应'},
+      {title:'根因定位',desc:'追溯传感器地址配置变更',result:'→ 传感器从站地址被重置为出厂默认0，网关仍按ID=2轮询'}
+    ],
+    confidence:96,
+    fixSteps:[
+      {title:'现象观察 — 分析数据异常特征',desc:'查看温湿度传感器数据异常的具体表现，分析通信超时的规律。',
+        terminal:`<div><span class="cmd">$</span> 查看最近10条温湿度数据...</div><div class="error">10:28:01 温度=23.5℃ 湿度=52.3%RH → 正常</div><div class="error">10:28:15 温度=0.0℃ 湿度=0.0%RH → 异常！归零</div><div class="error">10:28:30 通信超时 — 无响应</div><div class="error">10:28:45 通信超时 — 无响应</div><div><span class="cmd">→</span> 规律：数据突然归零后持续通信超时</div>`},
+      {title:'链路追踪 — 检查Modbus RTU通信链路',desc:'检查RS-485总线物理连接和Modbus RTU通信参数。',
+        terminal:`<div><span class="cmd">$</span> 检查RS-485总线状态...</div><div class="result">总线类型: RS-485 | 波特率: 9600 | 校验: None</div><div class="result">终端电阻: 120Ω ✓ | 偏置电阻: 正常 ✓</div><div class="result">传感器电源指示灯: 绿色常亮 → 设备供电正常</div><div><span class="cmd">$</span> 向 Slave ID=2 发送 Modbus RTU 请求...</div><div class="error">Read Holding Registers @ Slave=2, Addr=0x0000 → 超时！</div><div class="error">重试3次: 全部超时</div><div><span class="cmd">→</span> 结论：物理层正常，但Slave ID=2无响应</div>`},
+      {title:'虚实对比 — 扫描总线验证地址变更',desc:'使用Modbus调试工具扫描总线上所有可能的从站地址。',
+        terminal:`<div><span class="cmd">$</span> Modbus总线从站扫描 (ID: 0-10)...</div><div class="error">扫描 ID=0: ✓ 有响应！（出厂默认地址）</div><div class="result">  寄存器 0x0000 = 0 (温度原始值)</div><div class="result">  寄存器 0x0001 = 0 (湿度原始值)</div><div class="result">扫描 ID=1: ✗ 无响应</div><div class="error">扫描 ID=2: ✗ 无响应（网关配置的地址）</div><div class="result">扫描 ID=3-10: ✗ 无响应</div><div><span class="cmd">→</span> 结论：传感器地址从 ID=2 被重置为 ID=0（出厂默认）</div>`},
+      {title:'参数核验 — 恢复从站地址并验证',desc:'通过Modbus调试工具将传感器从站地址恢复为2，重新采集验证数据。',
+        terminal:`<div><span class="cmd">$</span> 写入传感器从站地址配置...</div><div class="result">Write Single Register @ Slave=0, Addr=0x0100, Value=2</div><div class="result">传感器响应: OK → 地址已更新为 Slave ID=2</div><div><span class="cmd">$</span> 验证新地址通信...</div><div class="result">Read Holding Registers @ Slave=2, Addr=0x0000 → 响应正常！</div><div class="result">✓ 温度 = 23.6℃ | 湿度 = 51.8%RH</div><div class="result" style="color:#00e676;font-weight:bold;">🎉 数据恢复正常！从站地址已恢复为ID=2</div>`}
+    ],
+    repairDesc:'温湿度传感器Modbus RTU从站地址已恢复为ID=2，数据采集正常',
+    eval:{score:88,verdict:'🏆 良好！通信故障分析能力突出',
+      dims:[
+        {name:'🔍 故障分析能力',score:90,comment:'能从"数据归零+通信超时"的现象中推断出地址配置问题'},
+        {name:'🔧 排障操作规范',score:92,comment:'地址恢复操作规范，先扫描确认再写入配置，操作顺序正确'},
+        {name:'💡 虚实对比思维',score:88,comment:'通过Modbus调试工具扫描总线，直观验证了地址变更'},
+        {name:'⏱️ 时间效率',score:82,comment:'排障用时5分10秒，地址扫描环节略慢，但总体在标准范围内'}
+      ],
+      summary:[
+        {icon:'✅',text:'<strong>亮点：</strong>从"数据突然归零"的现象中快速联想到通信地址问题，而非简单地认为是传感器损坏，体现了深入的故障推理能力。'},
+        {icon:'✅',text:'<strong>亮点：</strong>使用Modbus调试工具进行总线扫描，系统性地排查了所有可能的从站地址，方法论规范。'},
+        {icon:'⚠️',text:'<strong>建议：</strong>在工业现场，Modbus RTU设备断电重启后应检查参数保持情况，建议选用支持参数掉电保存的传感器型号。'},
+        {icon:'📈',text:'<strong>成长轨迹：</strong>在通信故障隔离环节用时较上次缩短18%，地址类问题的分析速度明显提升。'}
+      ]
+    }
+  },
+
+  mqtt_auth: {
+    faultName:'MQTT Broker认证策略变更',
+    icon:'🚨', title:'设备连接异常告警',
+    desc:'高速光模块传感器装配产线中，<span style="color:#ffab00;font-weight:600;">AGV搬运机器人</span>突然离线，MQTT连接被Broker拒绝。经排查，<span style="color:#ffab00;font-weight:600;">MQTT Broker</span>近期更新了安全策略，要求使用<span style="color:#ff1744;">TLS证书认证</span>，但AGV仍使用旧的密码认证方式，导致连接失败、AGV无法上报位置和任务数据。',
+    scope:'AGV机器人 → 边缘网关 → MQTT Broker → 云平台',
+    phenomenon:'MQTT 连接被拒（Return Code=5）',
+    level:'🟠 一级（AGV调度失控风险）',
+    flowDiagram:`
+      <div class="flow-row"><div class="flow-node">🌡️ 温湿度传感器</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok1">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node">🔧 S7-1200 PLC</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok2">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node">📷 视觉质检仪</div><div class="flow-arrow">→</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow">→</div><div class="flow-node">🖥️ 云平台</div><span class="flow-status flow-ok" data-flow="ok3">✓ 正常</span></div>
+      <div class="flow-row"><div class="flow-node broken" data-flow="fault-node">🤖 AGV机器人</div><div class="flow-arrow broken" data-flow="fault-arrow">✗</div><div class="flow-node">📡 边缘网关</div><div class="flow-arrow broken" data-flow="fault-arrow2">✗</div><div class="flow-node">🖥️ MQTT Broker</div><span class="flow-status flow-fail" data-flow="fault-status">✗ 连接拒绝</span></div>`,
+    aiThinking:`<p>📋 <span class="hl">故障现象确认：</span>AGV搬运机器人完全离线，MQTT CONNECT报文被Broker拒绝（Return Code=5: Not Authorized），其他设备数据正常。</p>
+      <p>🔍 <span class="hl">排查路径1 — 网络层：</span>ping 192.168.1.100（Broker）正常，TCP 8883端口可达，排除网络和端口问题。</p>
+      <p>🔍 <span class="hl">排查路径2 — 认证层：</span>MQTT CONNACK返回<span class="hl">Return Code=5（Not Authorized）</span>。AGV配置的用户名/密码正确（在其他客户端验证通过），但仍被拒绝。</p>
+      <p>🔍 <span class="hl">排查路径3 — 策略层：</span>检查Broker配置日志，发现<span class="hl">安全策略于今日09:00更新</span>：认证模式从"用户名+密码"变更为"TLS双向证书认证（mTLS）"。AGV仍使用密码认证，不符合新策略。</p>
+      <p style="color:#ffab00;font-weight:600;">⚡ 根因判断：MQTT Broker安全策略变更为TLS证书认证（mTLS），AGV仍使用旧的密码认证方式，认证方式不匹配导致连接被拒。</p>`,
+    analysisSteps:[
+      {title:'故障隔离',desc:'检查各设备连接状态',result:'→ 仅AGV（MQTT）离线，Modbus/OPC UA设备正常'},
+      {title:'网络诊断',desc:'验证网络连通性和端口可达性',result:'→ ping正常，TCP 8883可达，排除网络层问题'},
+      {title:'认证分析',desc:'解析MQTT CONNACK返回码',result:'→ Return Code=5(Not Authorized)，密码正确但被拒——认证方式不匹配'},
+      {title:'根因定位',desc:'检查Broker安全策略变更记录',result:'→ Broker 09:00更新为mTLS证书认证，AGV仍使用密码认证'}
+    ],
+    confidence:96,
+    fixSteps:[
+      {title:'现象观察 — 确认设备连接状态',desc:'检查AGV连接状态和MQTT返回码。',
+        terminal:`<div><span class="cmd">$</span> 查询AGV连接状态...</div><div class="error">AGV-001: 离线 | 最后心跳: 10:28:45</div><div><span class="cmd">$</span> 查看MQTT连接日志...</div><div class="error">10:28:45 CONNECT → CONNACK Return Code=5 (Not Authorized)</div><div class="error">10:29:15 CONNECT → CONNACK Return Code=5 (Not Authorized)</div><div class="error">10:29:45 CONNECT → CONNACK Return Code=5 (Not Authorized)</div><div><span class="cmd">→</span> 结论：MQTT连接被持续拒绝，认证失败</div>`},
+      {title:'链路追踪 — 逐层验证网络和认证',desc:'检查网络层、传输层、认证层的连通性和配置。',
+        terminal:`<div><span class="cmd">$</span> ping 192.168.1.100</div><div class="result">64 bytes: time=0.89ms → 网络OK</div><div><span class="cmd">$</span> nc -zv 192.168.1.100 8883</div><div class="result">Connection to 192.168.1.100 8883 succeeded → 端口OK</div><div><span class="cmd">$</span> mqtt-client test --host 192.168.1.100 --port 8883 --user agv001 --pass xxx</div><div class="error">CONNACK: Return Code=5 (Not Authorized)</div><div><span class="cmd">$</span> 验证密码正确性（在其他客户端测试）...</div><div class="result">密码验证正确 → 问题不在密码本身</div><div><span class="cmd">→</span> 结论：密码正确但被拒——Broker可能更新了认证策略</div>`},
+      {title:'虚实对比 — 检查Broker策略变更',desc:'查看Broker配置变更日志，对比当前认证要求。',
+        terminal:`<div><span class="cmd">$</span> 查看Broker配置变更日志...</div><div class="result">[09:00:00] 安全策略更新:</div><div class="result">  认证模式: password → <span style="color:#ffab00;font-weight:bold">mTLS (双向证书认证)</span></div><div class="result">  证书要求: 客户端必须提供有效TLS证书</div><div class="error">  旧认证方式(password)已停用</div><div><span class="cmd">$</span> 检查AGV当前认证配置...</div><div class="error">AGV-001: auth_mode = password → 已不兼容！</div><div><span class="cmd">→</span> 结论：Broker要求mTLS证书认证，AGV仍用密码认证</div>`},
+      {title:'参数核验 — 配置TLS证书并验证连接',desc:'为AGV生成并部署TLS证书，切换认证模式，验证连接恢复。',
+        terminal:`<div><span class="cmd">$</span> 从证书服务获取AGV客户端证书...</div><div class="result">✓ 下载 client.crt + client.key + ca.crt</div><div><span class="cmd">$</span> 更新AGV MQTT配置...</div><div class="result">auth_mode: password → mTLS</div><div class="result">+ 配置 client_cert, client_key, ca_cert</div><div><span class="cmd">$</span> 重新连接MQTT Broker...</div><div class="result">CONNECT → CONNACK Return Code=0 (Accepted) ✓</div><div class="result">✓ 位置= B区 | 电量= 87% | 任务= 搬运中</div><div class="result" style="color:#00e676;font-weight:bold;">🎉 AGV连接恢复！数据上报正常</div>`}
+    ],
+    repairDesc:'AGV TLS证书已部署，MQTT连接恢复正常，设备数据上报正常',
+    eval:{score:91,verdict:'🏆 优秀！安全认证排障能力突出',
+      dims:[
+        {name:'🔍 故障分析能力',score:93,comment:'能从"密码正确但被拒"的矛盾现象中推断出认证方式不匹配'},
+        {name:'🔧 排障操作规范',score:90,comment:'逐层排查（网络→传输→认证）逻辑清晰，证书部署操作规范'},
+        {name:'💡 虚实对比思维',score:88,comment:'通过Broker日志发现策略变更记录，体现了良好的变更管理意识'},
+        {name:'⏱️ 时间效率',score:92,comment:'排障用时4分15秒，认证层分析迅速，效率优秀'}
+      ],
+      summary:[
+        {icon:'✅',text:'<strong>亮点：</strong>在"密码正确但被拒"的矛盾面前没有困惑，而是快速将排查方向从"密码是否错误"转向"认证方式是否匹配"，体现了成熟的排障思维。'},
+        {icon:'✅',text:'<strong>亮点：</strong>主动检查Broker配置变更日志，找到了策略变更的时间点和内容，这是实际运维中非常关键的习惯。'},
+        {icon:'⚠️',text:'<strong>建议：</strong>建议建立IoT设备认证策略变更通知机制，Broker配置变更前应通知所有设备管理方，避免批量断连。'},
+        {icon:'📈',text:'<strong>成长轨迹：</strong>在安全认证类故障的排查速度上较上次提升30%，逐层排查方法已形成稳定的操作习惯。'}
+      ]
+    }
+  }
+};
+
+// ===== 加载故障状态 =====
+function loadFault(){
+  const raw=localStorage.getItem('fault_state');
+  if(raw){try{faultState=JSON.parse(raw);faultType=faultState.faultType||'mqtt_topic';}catch(e){faultType='mqtt_topic';}}
+  if(!scenarios[faultType])faultType='mqtt_topic';
+  const sc=scenarios[faultType];
+
+  // 故障来源
+  if(faultState){
+    document.getElementById('faultSource').classList.add('show');
+    document.getElementById('faultSourceDetail').textContent=`设备：${faultState.deviceName} | 协议：${faultState.protocol} | 故障：${sc.faultName}`;
+  }
+  document.getElementById('navDesc1').textContent=sc.faultName.length>8?sc.faultName.slice(0,8)+'…':sc.faultName;
+
+  // 阶段0
+  document.getElementById('faIcon').textContent=sc.icon;
+  document.getElementById('faTitle').textContent=sc.title;
+  document.getElementById('faDesc').innerHTML=sc.desc;
+  const now=faultState&&faultState.timestamp?new Date(faultState.timestamp).toLocaleString('zh-CN'):new Date().toLocaleString('zh-CN');
+  document.getElementById('fdTime').textContent=now;
+  document.getElementById('fdScope').textContent=sc.scope;
+  document.getElementById('fdPhenomenon').textContent=sc.phenomenon;
+  document.getElementById('fdLevel').textContent=sc.level;
+  document.getElementById('flowDiagram').innerHTML=sc.flowDiagram;
+
+  // 阶段1
+  document.getElementById('aiThinking').innerHTML=sc.aiThinking;
+  let stepsHtml='';
+  sc.analysisSteps.forEach((s,i)=>{stepsHtml+=`<div class="a-step"><div class="a-icon">${i<sc.analysisSteps.length-1?i+1:'✓'}</div><div class="a-content"><div class="a-title">${s.title}</div><div class="a-desc">${s.desc}</div><div class="a-result">${s.result}</div></div></div>`;});
+  document.getElementById('analysisSteps').innerHTML=stepsHtml;
+
+  // 阶段2
+  let fixHtml='';
+  sc.fixSteps.forEach((s,i)=>{
+    fixHtml+=`<div class="fix-step" id="fixStep${i}" onclick="activateFixStep(${i})">
+      <div class="fs-header"><div class="fs-num">${i+1}</div><div class="fs-title">${s.title}</div></div>
+      <div class="fs-desc">${s.desc}</div>
+      <div class="fix-action" id="fixAction${i}" style="display:none;">
+        <div class="terminal">${s.terminal}</div>
+        <button class="btn-fix" onclick="completeStep(${i})">${i<sc.fixSteps.length-1?'确认 ✓ 下一步':'修复完成 ✓'}</button>
+      </div></div>`;
+  });
+  document.getElementById('fixContainer').innerHTML=fixHtml;
+  fixStepsCompleted=new Array(sc.fixSteps.length).fill(false);
+
+  // 日志初始化
+  const t=new Date().toTimeString().slice(0,8);
+  logBody.innerHTML=`<div class="log-entry"><span class="log-time">${t}</span><div class="log-msg err">⚠️ 告警：${sc.faultName}</div></div>
+    <div class="log-entry"><span class="log-time">${t}</span><div class="log-msg warn">启动故障诊断流程</div></div>
+    <div class="log-entry"><span class="log-time">${t}</span><div class="log-msg info">AI故障诊断助手已激活</div></div>`;
+}
+
+// ===== 阶段切换 =====
+function goToPhase(idx){
+  setPhase(idx);
+}
+function setPhase(idx){
+  currentPhase=idx;
+  document.querySelectorAll('.phase-panel').forEach((p,i)=>p.classList.toggle('active',i===idx));
+  document.querySelectorAll('.flow-step').forEach((s,i)=>{
+    s.classList.remove('active','done');
+    const num=s.querySelector('.step-num');num.className='step-num';
+    if(i<idx){s.classList.add('done');num.classList.add('step-num-done');}
+    else if(i===idx){s.classList.add('active');num.classList.add('step-num-active');}
+    else{num.classList.add('step-num-pending');}
+  });
+  const badge=document.getElementById('phaseBadge');
+  badge.className='phase-badge '+['phase-fault','phase-ai','phase-fix','phase-eval','phase-analysis'][idx];
+  badge.textContent=['⚠️ 故障发生','🤖 AI分析中','🔧 排障操作','🏆 AI评价','📊 成绩分析'][idx];
+  document.getElementById('btnPrev').style.display=idx>0?'':'none';
+  const btnNext=document.getElementById('btnNext');
+  if(idx===0){btnNext.textContent='查看AI分析 →';btnNext.disabled=false;}
+  else if(idx===1){btnNext.textContent='开始排障 →';btnNext.disabled=false;animateAI();}
+  else if(idx===2){btnNext.textContent='查看AI评价 →';btnNext.disabled=true;}
+  else if(idx===3){btnNext.textContent='查看成绩分析 →';btnNext.disabled=false;}
+  else{btnNext.textContent='教学完成 ✓';btnNext.disabled=true;}
+  addLog(['进入故障现象','启动AI诊断','进入排障操作','进入AI评价','进入成绩分析'][idx],['warn','info','warn','ok','ok'][idx]);
+  if(idx===4){setTimeout(initCharts,200);}
+}
+function nextPhase(){setPhase(currentPhase+1);}
+function prevPhase(){setPhase(currentPhase-1);}
+function allPrevDone(){return true;}
+
+function animateAI(){
+  const target=scenarios[faultType].confidence;
+  const fill=document.getElementById('confidenceFill'),val=document.getElementById('confidenceValue');
+  let c=0;const si=setInterval(()=>{c+=2;if(c>=target){c=target;clearInterval(si);}fill.style.width=c+'%';val.textContent=c+'%';},30);
+}
+
+// ===== 排障步骤 =====
+function activateFixStep(idx){
+  if(idx>0&&!fixStepsCompleted[idx-1])return;
+  document.getElementById(`fixAction${idx}`).style.display='';
+  document.getElementById(`fixStep${idx}`).classList.add('active');
+  const titles=scenarios[faultType].fixSteps.map(s=>s.title.split('—')[0].trim());
+  addLog(`执行排障步骤${idx+1}：${titles[idx]||''}`,'info');
+}
+function completeStep(idx){
+  fixStepsCompleted[idx]=true;
+  const el=document.getElementById(`fixStep${idx}`);
+  el.classList.remove('active');el.classList.add('completed');
+  el.querySelector('.fs-num').textContent='✓';
+  const btn=document.getElementById(`fixAction${idx}`).querySelector('.btn-fix');
+  btn.disabled=true;btn.textContent='已完成 ✓';
+  addLog(`排障步骤${idx+1}完成 ✓`,'ok');
+
+  if(idx===fixStepsCompleted.length-1){
+    document.getElementById('btnNext').disabled=false;
+    addLog('🎉 故障修复完成！','ok');
+    localStorage.setItem('fault_repaired','true');
+    const sc=scenarios[faultType];
+    setTimeout(()=>{
+      document.getElementById('repairToast').classList.add('show');
+      document.getElementById('rtDesc').textContent=sc.repairDesc;
+      // 修复数据流动画
+      document.querySelectorAll('[data-flow="fault-node"]').forEach(el=>{el.classList.remove('broken','warn-broken');el.style.border='1px solid #00e676';el.style.color='#00e676';});
+      document.querySelectorAll('[data-flow="fault-arrow"],[data-flow="fault-arrow2"]').forEach(el=>{el.classList.remove('broken','warn-broken');el.style.color='#00e676';});
+      document.querySelectorAll('[data-flow="fault-status"]').forEach(el=>{el.className='flow-status flow-repaired';el.textContent='✓ 已恢复';});
+      document.querySelectorAll('[data-flow^="warn-"]').forEach(el=>{if(el.classList.contains('flow-status')){el.className='flow-status flow-repaired';el.textContent='✓ 已恢复';}});
+    },1000);
+    setTimeout(()=>{setPhase(3);animateEval();},3000);
+  }else{setTimeout(()=>activateFixStep(idx+1),500);}
+}
+
+// ===== AI评价 =====
+function animateEval(){
+  const ev=scenarios[faultType].eval;
+  let cs=0;
+  const si=setInterval(()=>{cs+=1;if(cs>=ev.score){cs=ev.score;clearInterval(si);}document.getElementById('scoreNum').textContent=cs;document.getElementById('scoreCircle').style.setProperty('--score-deg',(cs/100*360)+'deg');},20);
+  document.getElementById('evalVerdict').textContent=ev.verdict;
+
+  let dimsHtml='';
+  const colors=['linear-gradient(90deg,#42a5f5,#1e88e5)','linear-gradient(90deg,#66bb6a,#43a047)','linear-gradient(90deg,#ab47bc,#8e24aa)','linear-gradient(90deg,#ff9800,#f57c00)'];
+  ev.dims.forEach((d,i)=>{
+    dimsHtml+=`<div class="eval-dim"><div class="dim-header"><span class="dim-name">${d.name}</span><span class="dim-score" id="ds${i}">0</span></div>
+      <div class="dim-bar"><div class="dim-fill" id="df${i}" style="width:0%;background:${colors[i]};"></div></div>
+      <div class="dim-comment">${d.comment}</div></div>`;
+  });
+  document.getElementById('evalDims').innerHTML=dimsHtml;
+  ev.dims.forEach((d,i)=>{setTimeout(()=>{document.getElementById(`ds${i}`).textContent=d.score;document.getElementById(`df${i}`).style.width=d.score+'%';},300+i*200);});
+
+  let sumHtml='';
+  ev.summary.forEach(s=>{sumHtml+=`<div class="si"><span class="si-icon">${s.icon}</span><span class="si-text">${s.text}</span></div>`;});
+  document.getElementById('evalSummary').innerHTML=sumHtml;
+  addLog(`AI评价完成，综合评分：${ev.score}`,'ok');
+
+  // 同步AI评价到父窗口（数智融合实训平台）
+  try {
+    if (window.parent && window.parent !== window) {
+      const payload = {
+        score: ev.score,
+        verdict: ev.verdict,
+        dims: ev.dims,
+        summary: ev.summary,
+        faultType: faultType,
+        faultName: sc.faultName,
+        scoredAt: new Date().toISOString(),
+        studentId: (window.localStorage.getItem('iiot_current_student_id') || ''),
+        studentName: (window.localStorage.getItem('iiot_current_student_name') || ''),
+      };
+      window.parent.postMessage({ type: 'iiot-sim-eval', source: 'fault-diagnosis', payload }, '*');
+      addLog('已同步 AI 评价到主平台作业成绩','ok');
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function returnToTopology(){window.close();setTimeout(()=>{document.getElementById('repairToast').classList.remove('show');addLog('请手动关闭此页面','info');},500);}
+
+function addLog(msg,cls){
+  const time=new Date().toTimeString().slice(0,8);
+  const entry=document.createElement('div');entry.className='log-entry';
+  entry.innerHTML=`<span class="log-time">${time}</span><div class="log-msg ${cls||''}">${msg}</div>`;
+  logBody.appendChild(entry);logBody.scrollTop=logBody.scrollHeight;
+}
+
+// ===== ECharts 图表初始化 =====
+let chartsInitialized=false;
+function initCharts(){
+  if(chartsInitialized)return;
+  chartsInitialized=true;
+  const textColor='#c5cae9';
+  const axisLineColor='#1e3a5f';
+
+  // 1. 柱状图 - 各小组排障时间
+  var chart1=echarts.init(document.getElementById('chartBarTime'));
+  chart1.setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'axis',backgroundColor:'#141a4a',borderColor:'#1e3a5f',textStyle:{color:'#e0e6ff'},formatter:function(p){return p[0].name+'<br/>排障用时：'+p[0].value+'s';}},
+    grid:{left:'10%',right:'5%',bottom:'12%',top:'10%'},
+    xAxis:{type:'category',data:['第1组','第2组','第3组','第4组','第5组','第6组'],axisLabel:{color:textColor,fontSize:11},axisLine:{lineStyle:{color:axisLineColor}}},
+    yAxis:{type:'value',name:'秒',nameTextStyle:{color:'#90caf9',fontSize:11},axisLabel:{color:textColor,fontSize:11},splitLine:{lineStyle:{color:'#1e3a5f33'}},axisLine:{lineStyle:{color:axisLineColor}}},
+    series:[{
+      type:'bar',barWidth:'45%',
+      data:[
+        {value:285,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#1565c0'}])}},
+        {value:342,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#1565c0'}])}},
+        {value:198,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#00e676'},{offset:1,color:'#1b5e20'}])}},
+        {value:410,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#1565c0'}])}},
+        {value:256,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#1565c0'}])}},
+        {value:378,itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#1565c0'}])}}
+      ],
+      label:{show:true,position:'top',color:'#90caf9',fontSize:11,formatter:'{c}s'}
+    }]
+  });
+
+  // 2. 饼图 - 能力维度分布
+  var chart2=echarts.init(document.getElementById('chartPieAbility'));
+  chart2.setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'item',backgroundColor:'#141a4a',borderColor:'#1e3a5f',textStyle:{color:'#e0e6ff'}},
+    legend:{bottom:0,textStyle:{color:textColor,fontSize:10},itemWidth:12,itemHeight:12},
+    series:[{
+      type:'pie',radius:['35%','65%'],center:['50%','45%'],
+      label:{color:textColor,fontSize:11,formatter:'{b}\n{c}分'},
+      data:[
+        {value:82,name:'故障分析能力',itemStyle:{color:'#42a5f5'}},
+        {value:76,name:'排障操作规范',itemStyle:{color:'#66bb6a'}},
+        {value:71,name:'虚实对比思维',itemStyle:{color:'#ab47bc'}},
+        {value:68,name:'参数核验能力',itemStyle:{color:'#ff9800'}},
+        {value:85,name:'团队协作',itemStyle:{color:'#00e676'}},
+        {value:73,name:'时间效率',itemStyle:{color:'#ef5350'}}
+      ]
+    }]
+  });
+
+  // 3. 雷达图 - 各小组综合能力对比
+  var chart3=echarts.init(document.getElementById('chartRadar'));
+  chart3.setOption({
+    backgroundColor:'transparent',
+    tooltip:{backgroundColor:'#141a4a',borderColor:'#1e3a5f',textStyle:{color:'#e0e6ff'}},
+    legend:{bottom:0,textStyle:{color:textColor,fontSize:10},itemWidth:12,itemHeight:12},
+    radar:{
+      indicator:[
+        {name:'故障分析',max:100},{name:'操作规范',max:100},{name:'虚实对比',max:100},
+        {name:'参数核验',max:100},{name:'团队协作',max:100},{name:'时间效率',max:100}
+      ],
+      axisName:{color:'#90caf9',fontSize:10},
+      splitArea:{areaStyle:{color:['rgba(20,26,74,0.3)','rgba(13,17,55,0.3)']}},
+      axisLine:{lineStyle:{color:'#1e3a5f'}},
+      splitLine:{lineStyle:{color:'#1e3a5f'}}
+    },
+    series:[{
+      type:'radar',
+      data:[
+        {value:[92,88,85,90,87,95],name:'第3组（优秀）',lineStyle:{color:'#00e676',width:2},areaStyle:{color:'rgba(0,230,118,0.15)'},itemStyle:{color:'#00e676'}},
+        {value:[80,78,75,72,82,70],name:'第1组（良好）',lineStyle:{color:'#42a5f5',width:2},areaStyle:{color:'rgba(66,165,245,0.1)'},itemStyle:{color:'#42a5f5'}},
+        {value:[58,62,55,48,70,45],name:'第4组（需提升）',lineStyle:{color:'#ff9100',width:2},areaStyle:{color:'rgba(255,145,0,0.1)'},itemStyle:{color:'#ff9100'}}
+      ]
+    }]
+  });
+
+  // 4. 柱状图 - 课前vs课后成绩对比
+  var chart4=echarts.init(document.getElementById('chartBarGrowth'));
+  var categories=['MQTT Topic\n映射配置','网关Topic\n映射配置','四步排障法','虚实对比\n思维','多协议协同\n理解','故障分析\n能力'];
+  var beforeData=[52,45,38,42,55,48];
+  var afterData=[83,79,86,78,82,80];
+  var growthData=afterData.map(function(v,i){return v-beforeData[i];});
+  chart4.setOption({
+    backgroundColor:'transparent',
+    tooltip:{trigger:'axis',backgroundColor:'#141a4a',borderColor:'#1e3a5f',textStyle:{color:'#e0e6ff',fontSize:11}},
+    legend:{bottom:0,textStyle:{color:textColor,fontSize:10},itemWidth:12,itemHeight:12},
+    grid:{left:'10%',right:'5%',bottom:'18%',top:'8%'},
+    xAxis:{type:'category',data:categories,axisLabel:{color:textColor,fontSize:9,interval:0},axisLine:{lineStyle:{color:axisLineColor}}},
+    yAxis:{type:'value',name:'分数',nameTextStyle:{color:'#90caf9',fontSize:11},axisLabel:{color:textColor,fontSize:11},splitLine:{lineStyle:{color:'#1e3a5f33'}},axisLine:{lineStyle:{color:axisLineColor}},max:100},
+    series:[
+      {name:'课前',type:'bar',barGap:'10%',barWidth:'25%',
+        itemStyle:{color:'#37474f'},
+        data:beforeData,
+        label:{show:false}},
+      {name:'课后',type:'bar',barWidth:'25%',
+        itemStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#42a5f5'},{offset:1,color:'#00e676'}])},
+        data:afterData,
+        label:{show:true,position:'top',color:'#00e676',fontSize:10,formatter:function(p){return '+'+growthData[p.dataIndex];}}
+      }
+    ]
+  });
+
+  // 响应式
+  window.addEventListener('resize',function(){chart1.resize();chart2.resize();chart3.resize();chart4.resize();});
+}
+
+// ===== 初始化 =====
+loadFault();
+setPhase(0);
+
+// ===== 通知父窗口：仿真页面已就绪 =====
+try {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      type: 'iiot-sim-ready',
+      source: 'fault-diagnosis',
+      payload: {
+        timestamp: new Date().toISOString(),
+        url: location.href,
+        studentId: localStorage.getItem('iiot_current_student_id') || 'none',
+      }
+    }, '*');
+    console.log('[fault-diagnosis] 已发送就绪信号到父窗口');
+  } else {
+    console.log('[fault-diagnosis] 在独立窗口中运行（非 iframe 嵌入）');
+  }
+} catch (e) {
+  console.error('[fault-diagnosis] 发送就绪信号失败:', e);
+}
+</script>
+</body>
+</html>
