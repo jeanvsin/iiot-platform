@@ -1,0 +1,10 @@
+{
+  "githubRepo": "jeanvsin/iiot-platform",
+  "githubBranch": "main",
+  "statePath": "data/state.json",
+  "kbPath": "data/kb.json",
+  "stateBlobId": "019fb0af-2d16-7ba0-a158-87b9559e60ee",
+  "kbBlobId": "019fb0af-52bd-72e6-8e23-5884ae24c17e",
+  "updatedAt": "2026-07-30T10:30:00+08:00",
+  "note": "数据存储改为 GitHub 仓库永久存储（main 分支 data/ 目录）。读取走 raw.githubusercontent.com CDN（不需要 token），写入走 api.github.com Contents API（需要 token，管理员在界面手动输入一次，存 localStorage）。"
+}

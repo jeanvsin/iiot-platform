@@ -1,0 +1,2528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>网络拓扑与数据采集 — 项目二子任务3</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#f1f5f9;color:#0f172a;height:100vh;font-size:15px;line-height:1.6;margin:0;display:flex;flex-direction:column;overflow:hidden;}
+  .top-bar{background:#ffffff;display:flex;flex-direction:column;align-items:stretch;padding:10px 24px;border-bottom:2px solid #e2e8f0;gap:8px;box-shadow:0 1px 3px rgba(15,23,42,.06);flex:0 0 auto;}
+  .top-bar-row{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:44px;}
+  .top-bar h1{font-size:18px;font-weight:600;color:#0f172a;letter-spacing:.5px;display:flex;align-items:center;gap:10px;}
+  .top-bar h1::before{content:"";display:inline-block;width:4px;height:20px;background:linear-gradient(180deg,#0ea5e9,#0369a1);border-radius:2px;}
+  .top-bar .badge{background:#10b981;color:#fff;font-size:13px;padding:4px 12px;border-radius:12px;margin-left:12px;font-weight:600;}
+  .top-bar .badge.fault{background:#ef4444;color:#fff;animation:blink 1s infinite;}
+  .top-bar .version-tag{background:#e0f2fe;color:#0369a1;font-size:11px;padding:3px 10px;border-radius:10px;margin-left:auto;font-weight:600;letter-spacing:.5px;}
+  /* 链路策略开关（画在连线中点：核心⇄排障 全量采集） */
+  .canvas-area svg line.full-policy{stroke:#f59e0b;stroke-width:4;filter:drop-shadow(0 0 5px rgba(245,158,11,.55));}
+  .policy-switch{cursor:pointer;pointer-events:auto;}
+  .policy-switch:hover .ps-rect{stroke-width:2.5;}
+  /* 策略切换轻提示 */
+  #policyToast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-16px);background:#0f172a;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 6px 18px rgba(15,23,42,.35);opacity:0;pointer-events:none;transition:all .25s;z-index:9999;}
+  #policyToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  /* 全量采集链路的琥珀色数据粒子 */
+  .data-particle.particle-full{background:#fbbf24;box-shadow:0 0 6px #fbbf24;}
+  /* 顶栏功能 Tab（搭建/诊断） */
+  .top-tabs{display:flex;gap:6px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:4px;margin-left:16px;box-shadow:0 1px 3px rgba(15,23,42,.08);}
+  .top-tab{border:none;background:transparent;color:#475569;font-size:13px;padding:6px 14px;border-radius:7px;cursor:pointer;font-weight:600;white-space:nowrap;transition:all .2s;}
+  .top-tab:hover{background:#f1f5f9;color:#0f172a;}
+  .top-tab.active{background:#0369a1;color:#fff;box-shadow:0 2px 6px rgba(3,105,161,.35);}
+  .top-tab.tab-diagnose{color:#b45309;}
+  .top-tab.tab-diagnose:hover{background:#fef3c7;color:#92400e;}
+  .top-tab.tab-diagnose.active{background:#d97706;color:#fff;box-shadow:0 2px 6px rgba(217,119,6,.35);}
+  /* 拖拽落点预览框 */
+  .drop-ghost{position:absolute;z-index:5;width:110px;height:60px;border:2px dashed #0369a1;border-radius:12px;background:rgba(3,105,161,.08);display:none;pointer-events:none;align-items:center;justify-content:center;font-size:12px;color:#0369a1;font-weight:600;text-align:center;line-height:1.3;overflow:hidden;}
+  @keyframes blink{0%,100%{opacity:1}50%,100%{opacity:.5}}
+  .main{display:flex;flex:1 1 auto;min-height:0;}
+  /* ========== 设备库面板：白色背景 + 深色文字 ========== */
+  .device-panel{width:240px;background:#fff;border-right:1px solid #e2e8f0;padding:12px 10px 12px 12px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;box-shadow:2px 0 4px rgba(15,23,42,.04);}
+  .device-panel::-webkit-scrollbar{width:6px;}
+  .device-panel::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+  .device-panel::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
+  .device-panel h3{font-size:14px;color:#0369a1;margin-bottom:4px;font-weight:700;display:flex;align-items:center;gap:6px;position:sticky;top:0;background:#fff;padding:6px 0;z-index:6;border-bottom:1px solid #e2e8f0;}
+  /* ===== 二级目录（可折叠）===== */
+  .device-category{margin-bottom:2px;border:1px solid transparent;border-radius:8px;overflow:visible;}
+  .device-category-header{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;user-select:none;background:#f8fafc;border-radius:8px;transition:all .2s;font-size:13px;font-weight:600;color:#0f172a;border:1px solid #e2e8f0;position:sticky;top:38px;z-index:4;}
+  .device-category-header:hover{background:#e0f2fe;border-color:#0ea5e9;}
+  .device-category-header .cat-caret{display:inline-block;width:0;height:0;border-left:5px solid #64748b;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .2s;}
+  .device-category.open .cat-caret{transform:rotate(90deg);}
+  .device-category-header .cat-icon{font-size:15px;}
+  .device-category-header .cat-name{flex:1;}
+  .device-category-header .cat-count{background:#e0f2fe;color:#0369a1;font-size:11px;padding:1px 7px;border-radius:8px;font-weight:600;}
+  .device-category.open .cat-count{background:#0369a1;color:#fff;}
+  .device-category-items{display:none;flex-direction:column;gap:4px;padding:4px 0 2px 0;}
+  .device-category.open .device-category-items{display:flex;}
+  /* 设备项 */
+  .device-item{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;cursor:grab;display:flex;align-items:center;gap:8px;transition:all .2s;user-select:none;color:#0f172a;font-size:13px;}
+  .device-item:hover{border-color:#0ea5e9;background:#e0f2fe;transform:translateX(2px);box-shadow:0 2px 8px rgba(14,165,233,.2);}
+  .device-item .icon{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+  .device-item .info{font-size:13px;line-height:1.4;flex:1;min-width:0;}
+  .device-item .info .name{font-size:13px;font-weight:600;color:#0f172a;}
+  .device-item .info .spec{font-size:11px;color:#64748b;margin-top:1px;}
+  .device-item .info .badge-perf{font-size:10px;background:#fef2f2;color:#b91c1c;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px;}
+  .device-item .info .badge-eco{font-size:10px;background:#f0fdf4;color:#15803d;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px;}
+  .icon-plc{background:#15803d;color:#fff;}.icon-sensor{background:#ea580c;color:#fff;}.icon-gateway{background:#7c3aed;color:#fff;}
+  .icon-server{background:#0369a1;color:#fff;}.icon-camera{background:#b91c1c;color:#fff;}.icon-robot{background:#65a30d;color:#fff;}
+  .icon-hmi{background:#0891b2;color:#fff;}.icon-actuator{background:#be185d;color:#fff;}.icon-remoteio{background:#475569;color:#fff;}
+  .icon-production{background:#4f46e5;color:#fff;}.icon-netsafe{background:#0d9488;color:#fff;}
+  .icon-gw-hi{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;}
+  .icon-gw-lo{background:linear-gradient(135deg,#65a30d,#16a34a);color:#fff;}
+  /* 画布 */
+  .canvas-area{flex:1;position:relative;overflow:hidden;background:#0f172a;background-image:radial-gradient(circle at 30% 20%, rgba(56,189,248,.06) 0%, transparent 50%),radial-gradient(circle at 80% 80%, rgba(34,197,94,.04) 0%, transparent 50%);}
+  .canvas-area svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1;}
+  .canvas-area svg line{stroke:#38bdf8;stroke-width:2;pointer-events:auto;cursor:pointer;transition:stroke .2s, stroke-width .2s;}
+  .canvas-area svg line:hover{stroke-width:4;}
+  .canvas-area svg line.active{stroke:#10b981;stroke-width:3;filter:drop-shadow(0 0 4px #10b981);}
+  .canvas-area svg line.selected{stroke:#fbbf24;stroke-width:4;filter:drop-shadow(0 0 6px #fbbf24);}
+  .canvas-area svg line.fault{stroke:#ef4444;stroke-width:3;stroke-dasharray:8 4;animation:fb 1s infinite;filter:drop-shadow(0 0 6px #ef4444);}
+  .canvas-area svg line.fault-data{stroke:#f59e0b;stroke-width:3;stroke-dasharray:4 4;animation:fb 1.5s infinite;filter:drop-shadow(0 0 4px #f59e0b);}
+  @keyframes fb{0%,100%{opacity:1}50%,100%{opacity:.3}}
+  /* 节点（支持自定义尺寸）*/
+  .topo-node{position:absolute;z-index:10;border-radius:12px;padding:12px 16px;cursor:move;user-select:none;width:110px;height:60px;text-align:center;transition:box-shadow .2s,transform .2s,border-color .2s;font-size:14px;color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.3);}
+  .topo-node:hover{box-shadow:0 0 20px rgba(14,165,233,.5),0 4px 12px rgba(0,0,0,.3);transform:translateY(-1px);}
+  .topo-node.selected{box-shadow:0 0 0 3px #0ea5e9,0 0 20px rgba(14,165,233,.5),0 4px 12px rgba(0,0,0,.3);}
+  /* 节点按链路策略显示发光边框：core=蓝色（仅核心上传），full=琥珀色（拓展已上传） */
+  .topo-node.policy-core{box-shadow:0 0 0 2px #0ea5e9,0 0 14px rgba(14,165,233,.45),0 4px 12px rgba(0,0,0,.3);}
+  .topo-node.policy-full{box-shadow:0 0 0 2px #f59e0b,0 0 16px rgba(245,158,11,.55),0 4px 12px rgba(0,0,0,.3);}
+  .topo-node.policy-core.selected{box-shadow:0 0 0 3px #0ea5e9,0 0 22px rgba(14,165,233,.6),0 4px 12px rgba(0,0,0,.3);}
+  .topo-node.policy-full.selected{box-shadow:0 0 0 3px #f59e0b,0 0 24px rgba(245,158,11,.7),0 4px 12px rgba(0,0,0,.3);}
+  .topo-node.fault-node{animation:fp 1.5s infinite;}
+  .topo-node.fault-err{box-shadow:0 0 0 3px #ef4444,0 0 20px rgba(239,68,68,.5),0 4px 12px rgba(0,0,0,.3);animation:fp 1.5s infinite;}
+  .topo-node.fault-warn{box-shadow:0 0 0 3px #f59e0b,0 0 20px rgba(245,158,11,.5),0 4px 12px rgba(0,0,0,.3);animation:fp 2s infinite;}
+  .topo-node.overload{box-shadow:0 0 0 3px #dc2626,0 0 24px rgba(220,38,38,.7),0 4px 12px rgba(0,0,0,.3);animation:fp 1s infinite;}
+  @keyframes fp{0%,100%{opacity:1}50%,100%{opacity:.7}}
+  .topo-node .node-icon{font-size:24px;margin-bottom:4px;}
+  .topo-node .node-name{font-size:14px;font-weight:600;color:#fff;white-space:nowrap;line-height:1.3;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .topo-node .node-protocol{font-size:12px;color:rgba(255,255,255,.85);margin-top:3px;font-weight:500;}
+  .topo-node .status-dot{width:10px;height:10px;border-radius:50%;position:absolute;top:8px;right:8px;}
+  .status-online{background:#10b981;box-shadow:0 0 6px #10b981;}
+  .status-offline{background:#ef4444;box-shadow:0 0 6px #ef4444;animation:blink 1s infinite;}
+  .status-warn{background:#f59e0b;box-shadow:0 0 6px #f59e0b;animation:blink 1.5s infinite;}
+  .node-plc{background:linear-gradient(135deg,#15803d,#16a34a);border:1px solid #22c55e;}
+  .node-sensor{background:linear-gradient(135deg,#ea580c,#f97316);border:1px solid #fb923c;}
+  .node-gateway{background:linear-gradient(135deg,#7c3aed,#8b5cf6);border:1px solid #a78bfa;}
+  .node-gateway-hi{background:linear-gradient(135deg,#7c3aed,#a855f7,#c026d3);border:2px solid #e879f9;}
+  .node-gateway-lo{background:linear-gradient(135deg,#65a30d,#16a34a);border:1px solid #4ade80;}
+  .node-server{background:linear-gradient(135deg,#0369a1,#0284c7);border:1px solid #38bdf8;}
+  .node-camera{background:linear-gradient(135deg,#b91c1c,#dc2626);border:1px solid #f87171;}
+  .node-robot{background:linear-gradient(135deg,#65a30d,#84cc16);border:1px solid #a3e635;}
+  .node-hmi{background:linear-gradient(135deg,#0891b2,#06b6d4);border:1px solid #22d3ee;}
+  .node-actuator{background:linear-gradient(135deg,#be185d,#ec4899);border:1px solid #f472b6;}
+  .node-remoteio{background:linear-gradient(135deg,#475569,#64748b);border:1px solid #94a3b8;}
+  .node-production{background:linear-gradient(135deg,#4f46e5,#6366f1);border:1px solid #818cf8;}
+  .node-netsafe{background:linear-gradient(135deg,#0d9488,#14b8a6);border:1px solid #2dd4bf;}
+  /* 缩放手柄：右下角三角 */
+  .resize-handle{position:absolute;bottom:0;right:0;width:14px;height:14px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 40%,#fff 40%,#fff 60%,transparent 60%);display:none;z-index:2;}
+  .topo-node.selected .resize-handle{display:block;}
+  /* 节点尺寸自适应字号 */
+  .topo-node.size-small .node-icon{font-size:18px;}
+  .topo-node.size-small .node-name{font-size:12px;}
+  .topo-node.size-small .node-protocol{font-size:10px;}
+  .topo-node.size-large .node-icon{font-size:32px;}
+  .topo-node.size-large .node-name{font-size:16px;}
+  .topo-node.size-large .node-protocol{font-size:13px;}
+  /* 网关负载条 */
+  .gateway-load-bar{position:absolute;bottom:-6px;left:8px;right:8px;height:4px;background:rgba(0,0,0,.4);border-radius:2px;overflow:hidden;display:none;}
+  .topo-node.gateway-node .gateway-load-bar{display:block;}
+  .gateway-load-bar .glb-fill{height:100%;background:#10b981;transition:width .3s, background .3s;}
+  .data-particle{position:absolute;width:6px;height:6px;border-radius:50%;z-index:5;pointer-events:none;}
+  .particle-modbus{background:#f59e0b;box-shadow:0 0 6px #f59e0b;}
+  .particle-opcua{background:#06b6d4;box-shadow:0 0 6px #06b6d4;}
+  .particle-mqtt{background:#84cc16;box-shadow:0 0 6px #84cc16;}
+  .connect-hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,.95);border:1px solid #38bdf8;border-radius:8px;padding:10px 18px;font-size:14px;color:#e0f2fe;z-index:20;box-shadow:0 4px 12px rgba(2,6,23,.3);}
+  /* 数据采集监控面板：白色背景 + 深色文字 */
+  .data-panel{width:380px;background:#fff;border-left:1px solid #e2e8f0;display:flex;flex-direction:column;box-shadow:-2px 0 4px rgba(15,23,42,.04);}
+  .data-panel .panel-header{padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;background:#f8fafc;}
+  .data-panel .panel-header h3{font-size:16px;color:#0f172a;font-weight:700;}
+  .protocol-tabs{display:flex;gap:6px;flex-wrap:wrap;}
+  .protocol-tabs button{background:#fff;border:1px solid #cbd5e1;color:#475569;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;transition:all .2s;}
+  .protocol-tabs button:hover{background:#f1f5f9;border-color:#94a3b8;}
+  .protocol-tabs button.active{background:#0369a1;color:#fff;border-color:#0284c7;}
+  .data-table-wrap{flex:1;overflow-y:auto;padding:10px;background:#fff;min-height:0;}
+  .data-table-wrap::-webkit-scrollbar{width:6px;}
+  .data-table-wrap::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+  .data-table-wrap::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
+  table.data-table{width:100%;border-collapse:collapse;font-size:13px;}
+  table.data-table th{background:#f1f5f9;color:#0f172a;padding:8px 10px;text-align:left;position:sticky;top:0;font-weight:600;border-bottom:1px solid #e2e8f0;}
+  table.data-table td{padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#334155;}
+  table.data-table tr:hover td{background:#f8fafc;}
+  table.data-table tr.fault-row td{background:rgba(239,68,68,.06);}
+  table.data-table tr.warn-row td{background:rgba(245,158,11,.06);}
+  table.data-table tr.offline-row td{background:rgba(148,163,184,.06);color:#94a3b8;font-style:italic;}
+  .val-ok{color:#10b981;font-weight:600;}.val-warn{color:#f59e0b;font-weight:600;}.val-err{color:#ef4444;font-weight:700;}.val-corrupt{color:#f97316;font-weight:600;}
+  .val-offline{color:#94a3b8;font-style:italic;font-weight:500;}
+  /* 流量监控区 */
+  .traffic-monitor{padding:12px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;}
+  .traffic-monitor .tm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:13px;color:#475569;font-weight:600;}
+  .traffic-monitor .tm-canvas-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:6px;position:relative;}
+  .traffic-monitor canvas{display:block;width:100%;height:54px;}
+  .traffic-monitor .tm-legend{position:absolute;top:8px;right:10px;font-size:10px;color:#64748b;background:rgba(255,255,255,.9);padding:1px 5px;border-radius:3px;}
+  /* 指标卡栏：5 张 */
+  .metrics-bar{padding:10px 18px;border-top:1px solid #e2e8f0;display:flex;gap:8px;background:#f8fafc;}
+  .metric-card{flex:1;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 4px;text-align:center;min-width:0;}
+  .metric-card .val{font-size:17px;font-weight:700;color:#0369a1;line-height:1.2;}
+  .metric-card .val.danger{color:#dc2626;}
+  .metric-card .val.warn{color:#f59e0b;}
+  .metric-card .val.ok{color:#10b981;}
+  .metric-card .label{font-size:11px;color:#64748b;margin-top:2px;line-height:1.3;}
+  /* 顶部工具栏 */
+  .toolbar{position:absolute;top:14px;right:14px;z-index:20;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:480px;align-items:center;}
+  .toolbar button{background:#fff;border:1px solid #cbd5e1;color:#334155;padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer;transition:all .2s;white-space:nowrap;font-weight:500;box-shadow:0 1px 2px rgba(15,23,42,.05);}
+  .toolbar button:hover{background:#f1f5f9;border-color:#94a3b8;box-shadow:0 2px 4px rgba(15,23,42,.1);}
+  .toolbar button.active{background:#15803d;border-color:#16a34a;color:#fff;box-shadow:0 2px 4px rgba(21,128,61,.3);}
+  .toolbar button.fault-btn{border-color:#fca5a5;color:#dc2626;}
+  .toolbar button.fault-btn:hover{background:#dc2626;color:#fff;border-color:#b91c1c;}
+  /* 频率滑块 */
+  .frequency-control{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:6px 10px;box-shadow:0 1px 2px rgba(15,23,42,.05);}
+  .frequency-control .fc-label{font-size:12px;color:#475569;font-weight:600;white-space:nowrap;}
+  .frequency-control input[type=range]{width:90px;cursor:pointer;}
+  .frequency-control .fc-val{font-size:13px;color:#0369a1;font-weight:700;min-width:42px;text-align:right;}
+  .frequency-control select{background:#f8fafc;border:1px solid #cbd5e1;border-radius:4px;padding:2px 4px;font-size:12px;color:#475569;cursor:pointer;}
+  /* 模式指示 */
+  .mode-indicator{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;background:#15803d;color:#fff;padding:7px 18px;border-radius:20px;font-size:13px;display:none;font-weight:600;box-shadow:0 2px 8px rgba(21,128,61,.3);}
+  .mode-indicator.show{display:block;}
+  /* 节点属性面板 */
+  .node-props{position:absolute;bottom:16px;right:16px;z-index:20;background:rgba(255,255,255,.98);border:1px solid #cbd5e1;border-radius:10px;padding:14px 18px;min-width:240px;display:none;box-shadow:0 4px 16px rgba(15,23,42,.15);color:#0f172a;max-width:300px;}
+  .node-props.show{display:block;}
+  .node-props h4{font-size:15px;color:#0369a1;margin-bottom:10px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .node-props .prop-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid #f1f5f9;gap:8px;}
+  .node-props .prop-label{color:#64748b;flex-shrink:0;}
+  .node-props .prop-value{color:#0f172a;font-weight:500;text-align:right;word-break:break-all;}
+  /* 属性面板：点位清单明细（核心/拓展分层可视化） */
+  .node-props .prop-points-wrap{margin-top:10px;max-height:220px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;}
+  .node-props .pl-head{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#eff6ff;border-bottom:1px solid #e2e8f0;font-size:12px;font-weight:700;color:#0369a1;position:sticky;top:0;}
+  .node-props .pl-item{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:12px;border-bottom:1px solid #f1f5f9;color:#0f172a;}
+  .node-props .pl-item.pl-off{color:#94a3b8;font-style:italic;}
+  .node-props .pl-dot{flex-shrink:0;font-weight:800;}
+  .node-props .pl-core{color:#0369a1;}
+  .node-props .pl-opt{color:#d97706;}
+  .node-props .pl-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .node-props .pl-kind{flex-shrink:0;font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;}
+  .node-props .pl-kind.k-core{background:#dbeafe;color:#0369a1;}
+  .node-props .pl-kind.k-opt{background:#fef3c7;color:#92400e;}
+  .node-props .pl-up{flex-shrink:0;font-size:11px;font-weight:600;}
+  .node-props .pl-up.u-on{color:#16a34a;}
+  .node-props .pl-up.u-off{color:#94a3b8;}
+  .node-props .pl-empty{text-align:center;padding:12px;color:#94a3b8;font-size:12px;}
+  /* 画布点位图例（常驻左下角，直观区分核心/拓展；避开右下角属性面板） */
+  /* 折叠图例按钮（常驻右下角，不遮挡节点） */
+  .point-legend-collapsed{position:absolute;left:16px;bottom:16px;z-index:18;background:#fff;border:1px solid #cbd5e1;border-radius:20px;padding:6px 14px;font-size:12px;color:#334155;box-shadow:0 2px 8px rgba(15,23,42,.12);cursor:pointer;pointer-events:auto;font-weight:600;transition:all .2s;}
+  .point-legend-collapsed:hover{background:#f1f5f9;border-color:#94a3b8;}
+  /* 展开后的图例面板 */
+  .point-legend{position:absolute;left:16px;bottom:16px;z-index:19;background:rgba(255,255,255,.98);border:1px solid #cbd5e1;border-radius:10px;padding:10px 14px;font-size:11px;color:#334155;box-shadow:0 4px 14px rgba(15,23,42,.15);pointer-events:auto;line-height:1.7;min-width:220px;max-width:260px;display:flex;flex-direction:column;gap:3px;}
+  .point-legend .pl-title{font-weight:700;color:#0f172a;margin-bottom:3px;font-size:12px;}
+  .point-legend .pl-close{position:absolute;top:6px;right:8px;cursor:pointer;color:#94a3b8;font-size:12px;line-height:1;padding:2px 4px;border-radius:4px;}
+  .point-legend .pl-close:hover{background:#f1f5f9;color:#475569;}
+  .point-legend .lg-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px;}
+  .point-legend .lg-core{background:#0369a1;}
+  .point-legend .lg-opt-on{background:#d97706;}
+  .point-legend .lg-opt-off{background:#cbd5e1;}
+  /* 上下文菜单（节点/连线通用） */
+  .context-menu{position:absolute;z-index:50;background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:4px 0;min-width:180px;display:none;box-shadow:0 4px 16px rgba(15,23,42,.15);}
+  .context-menu .menu-item{padding:10px 16px;font-size:14px;color:#334155;cursor:pointer;}
+  .context-menu .menu-item:hover{background:#f1f5f9;color:#0f172a;}
+  .context-menu .menu-item.danger{color:#dc2626;}
+  .context-menu .menu-item.danger:hover{background:#fef2f2;}
+  .context-menu .menu-separator{height:1px;background:#e2e8f0;margin:4px 0;}
+  /* 故障横幅 */
+  .fault-banner{position:absolute;top:64px;left:220px;right:380px;z-index:30;padding:14px 22px;display:none;align-items:center;justify-content:space-between;animation:slideDown .3s ease;box-shadow:0 4px 12px rgba(2,6,23,.2);border-radius:0 0 8px 8px;}
+  .fault-banner.show{display:flex;}
+  .fault-banner.level-err{background:linear-gradient(90deg,#b91c1c,#dc2626);color:#fff;}
+  .fault-banner.level-warn{background:linear-gradient(90deg,#ea580c,#f97316);color:#fff;}
+  @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+  .fault-banner .fb-left{display:flex;align-items:center;gap:12px;}
+  .fault-banner .fb-icon{font-size:24px;animation:shake .5s infinite;}
+  @keyframes shake{0%,100%{transform:rotate(0)}25%,100%{transform:rotate(-5deg)}75%{transform:rotate(5deg)}}
+  .fault-banner .fb-text{font-size:15px;font-weight:600;}
+  .fault-banner .fb-sub{font-size:13px;opacity:.9;margin-top:3px;}
+  .fault-banner .fb-actions{display:flex;gap:8px;}
+  .fault-banner .fb-btn{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;}
+  .fb-btn-diagnose{background:#fff;color:#b91c1c;}
+  .fb-btn-diagnose:hover{background:#fecaca;}
+  .fb-btn-dismiss{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;}
+  .fb-btn-dismiss:hover{background:rgba(255,255,255,.1);}
+  /* 无数据 */
+  .no-data{text-align:center;padding:50px 20px;color:#64748b;font-size:14px;}
+  .no-data .nd-icon{font-size:48px;margin-bottom:14px;opacity:.5;}
+  /* 故障弹窗 */
+  .fault-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.6);z-index:100;display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+  .fault-modal.show{display:flex;}
+  .fault-modal-box{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:28px;width:560px;max-height:82vh;overflow-y:auto;box-shadow:0 20px 60px rgba(15,23,42,.3);}
+  .fault-modal-box h2{color:#dc2626;font-size:19px;margin-bottom:18px;text-align:center;font-weight:700;}
+  .fault-option{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;cursor:pointer;transition:all .2s;}
+  .fault-option:hover{border-color:#f59e0b;background:#fffbeb;box-shadow:0 2px 8px rgba(245,158,11,.15);}
+  .fault-option .fo-title{font-size:15px;font-weight:600;color:#0f172a;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+  .fault-option .fo-desc{font-size:13px;color:#475569;line-height:1.6;}
+  .fault-option .fo-tag{font-size:11px;padding:3px 8px;border-radius:5px;font-weight:600;}
+  .fo-tag-err{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;}
+  .fo-tag-warn{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
+  .fault-modal-close{display:block;margin:14px auto 0;background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;padding:10px 28px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:all .2s;}
+  .fault-modal-close:hover{background:#e2e8f0;color:#0f172a;}
+  /* 删除确认 Toast（含撤销） */
+  .delete-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#0f172a;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;display:flex;align-items:center;gap:14px;z-index:200;opacity:0;pointer-events:none;transition:all .3s;box-shadow:0 8px 24px rgba(0,0,0,.3);}
+  .delete-toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0);}
+  .delete-toast .dt-undo{background:#fbbf24;color:#0f172a;border:none;padding:5px 14px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
+  .delete-toast .dt-undo:hover{background:#f59e0b;color:#fff;}
+  /* 节点悬浮 tooltip */
+  .node-tooltip{position:absolute;z-index:60;background:rgba(15,23,42,.96);color:#fff;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.6;display:none;pointer-events:none;max-width:240px;box-shadow:0 4px 16px rgba(0,0,0,.3);border:1px solid #334155;}
+  .node-tooltip.show{display:block;}
+  .node-tooltip .nt-title{font-size:13px;font-weight:700;color:#38bdf8;margin-bottom:4px;}
+  .node-tooltip .nt-row{display:flex;justify-content:space-between;gap:10px;}
+  .node-tooltip .nt-label{color:#94a3b8;}
+  .node-tooltip .nt-value{color:#fff;font-weight:500;}
+  /* 新手引导浮层 */
+  .newbie-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:90;display:none;}
+  .newbie-overlay.show{display:block;}
+  .newbie-mask{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.75);backdrop-filter:blur(2px);}
+  .newbie-card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:32px 40px;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.4);text-align:center;}
+  .newbie-card h2{font-size:22px;color:#0369a1;margin-bottom:16px;font-weight:700;}
+  .newbie-card .nc-steps{display:flex;flex-direction:column;gap:12px;text-align:left;margin-bottom:20px;}
+  .newbie-card .nc-step{display:flex;gap:12px;align-items:flex-start;}
+  .newbie-card .nc-step-num{width:32px;height:32px;background:#0369a1;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;}
+  .newbie-card .nc-step-content{flex:1;padding-top:4px;}
+  .newbie-card .nc-step-title{font-weight:600;color:#0f172a;font-size:15px;margin-bottom:2px;}
+  .newbie-card .nc-step-desc{font-size:13px;color:#64748b;line-height:1.5;}
+  .newbie-card .nc-btn{background:#0369a1;color:#fff;border:none;padding:10px 32px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  .newbie-card .nc-btn:hover{background:#0284c7;}
+  .newbie-card .nc-skip{background:transparent;color:#64748b;border:none;font-size:13px;margin-top:10px;cursor:pointer;text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <div class="top-bar-row">
+    <h1>🔗 工业互联网实训 · 网络仿真工作台</h1>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="top-tabs">
+        <button class="top-tab active" title="当前页：拓扑搭建与数据采集监控">🛠️ 拓扑搭建与采集监控</button>
+        <button class="top-tab tab-diagnose" onclick="gotoDiagnosis()" title="进入网络诊断与AI评价流程">🔍 网络诊断</button>
+      </div>
+      <span class="version-tag" id="versionTag">v3.5 点位可视化版</span>
+      <span class="badge" id="statusBadge">系统正常</span>
+    </div>
+  </div>
+  <!-- 学生拓扑查看横幅（批阅页跳转时显示在顶栏下方，全宽常驻） -->
+  <div id="topoViewBanner" style="display:none;width:100%;align-items:center;gap:10px;background:linear-gradient(135deg,#0f766e,#115e59);color:#fff;padding:10px 16px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.25),inset 0 0 0 2px #fbbf24;font-size:14px;font-weight:600;flex-wrap:wrap;animation:slideDown .35s ease;">
+    <span style="background:#fbbf24;color:#78350f;border-radius:6px;padding:3px 10px;font-weight:800;font-size:12px;white-space:nowrap;box-shadow:0 2px 4px rgba(0,0,0,.2);">学生拓扑</span>
+    <span style="white-space:nowrap;">正在查看学生提交的网络拓扑：</span>
+    <b id="topoViewBannerName" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fde68a;">学生提交的拓扑.json</b>
+    <span id="topoViewBannerMode" style="background:#0369a1;color:#fff;border-radius:6px;padding:3px 10px;font-weight:700;font-size:12px;white-space:nowrap;display:none;"></span>
+    <span style="opacity:.85;font-weight:400;white-space:nowrap;">（可交互查看：点击节点可见核心/拓展点位明细；教师修改不会回传学生作业；「新窗口打开」同样可查看）</span>
+    <button onclick="closeTopoViewBanner()" title="退出查看并恢复空白画布" style="background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:6px;padding:3px 12px;cursor:pointer;font-weight:700;margin-left:auto;white-space:nowrap;">✕ 退出查看</button>
+  </div>
+</div>
+<div class="fault-banner" id="faultBanner">
+  <div class="fb-left">
+    <span class="fb-icon" id="fbIcon">🚨</span>
+    <div>
+      <div class="fb-text" id="faultText">-</div>
+      <div class="fb-sub" id="faultSub">-</div>
+    </div>
+  </div>
+  <div class="fb-actions">
+    <button class="fb-btn fb-btn-diagnose" onclick="openDiagnosis()">🤖 启动AI诊断</button>
+    <button class="fb-btn fb-btn-dismiss" onclick="dismissFault()">关闭</button>
+  </div>
+</div>
+<div class="main">
+  <!-- ============ 设备库：二级目录折叠面板 ============ -->
+  <div class="device-panel">
+    <h3>📦 设备库（点击展开）</h3>
+    <!-- PLC 控制器（7 个） -->
+    <div class="device-category" data-cat="plc">
+      <div class="device-category-header" onclick="toggleCategory('plc')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🔧</span>
+        <span class="cat-name">PLC 控制器</span>
+        <span class="cat-count">7</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="plc" data-name="西门子 S7-200 SMART" data-model="S7-200 SMART"><div class="icon icon-plc">🔌</div><div class="info"><div class="name">西门子 S7-200 SMART</div><div class="spec">OPC UA · 小型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="三菱 FX5U-32MT" data-model="FX5U"><div class="icon icon-plc">🔧</div><div class="info"><div class="name">三菱 FX5U-32MT</div><div class="spec">OPC UA · 小型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="西门子 S7-1200" data-model="S7-1200"><div class="icon icon-plc">🔧</div><div class="info"><div class="name">西门子 S7-1200</div><div class="spec">OPC UA · 中型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="西门子 S7-1500" data-model="S7-1500"><div class="icon icon-plc">⚙️</div><div class="info"><div class="name">西门子 S7-1500</div><div class="spec">OPC UA · 中型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="罗克韦尔 CompactLogix" data-model="CompactLogix"><div class="icon icon-plc">⚙️</div><div class="info"><div class="name">罗克韦尔 CompactLogix</div><div class="spec">Ethernet/IP · 中型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="西门子 S7-300" data-model="S7-300"><div class="icon icon-plc">🏭</div><div class="info"><div class="name">西门子 S7-300</div><div class="spec">OPC UA · 大型</div></div></div>
+        <div class="device-item" draggable="true" data-type="plc" data-name="罗克韦尔 ControlLogix" data-model="ControlLogix"><div class="icon icon-plc">🏭</div><div class="info"><div class="name">罗克韦尔 ControlLogix</div><div class="spec">Ethernet/IP · 大型</div></div></div>
+      </div>
+    </div>
+    <!-- 传感器（6 个） -->
+    <div class="device-category" data-cat="sensor">
+      <div class="device-category-header" onclick="toggleCategory('sensor')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🌡️</span>
+        <span class="cat-name">传感器</span>
+        <span class="cat-count">6</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="sensor" data-name="温湿度传感器" data-model="温湿度"><div class="icon icon-sensor">🌡️</div><div class="info"><div class="name">温湿度传感器</div><div class="spec">Modbus RTU</div></div></div>
+        <div class="device-item" draggable="true" data-type="sensor" data-name="电容式接近传感器" data-model="电容式"><div class="icon icon-sensor">⚡</div><div class="info"><div class="name">电容式接近传感器</div><div class="spec">IO-Link</div></div></div>
+        <div class="device-item" draggable="true" data-type="sensor" data-name="电感式接近传感器" data-model="电感式"><div class="icon icon-sensor">🧲</div><div class="info"><div class="name">电感式接近传感器</div><div class="spec">NPN/PNP</div></div></div>
+        <div class="device-item" draggable="true" data-type="sensor" data-name="光电式传感器" data-model="光电式"><div class="icon icon-sensor">💡</div><div class="info"><div class="name">光电式传感器</div><div class="spec">IO-Link</div></div></div>
+        <div class="device-item" draggable="true" data-type="sensor" data-name="压力变送器" data-model="压力"><div class="icon icon-sensor">🌀</div><div class="info"><div class="name">压力变送器</div><div class="spec">Modbus RTU</div></div></div>
+        <div class="device-item" draggable="true" data-type="sensor" data-name="电磁流量计" data-model="流量"><div class="icon icon-sensor">🌊</div><div class="info"><div class="name">电磁流量计</div><div class="spec">Modbus / HART</div></div></div>
+      </div>
+    </div>
+    <!-- 视觉相机（4 个） -->
+    <div class="device-category" data-cat="camera">
+      <div class="device-category-header" onclick="toggleCategory('camera')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">📷</span>
+        <span class="cat-name">视觉相机</span>
+        <span class="cat-count">4</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="camera" data-name="海康 MV-CS200" data-model="海康MV-CS200"><div class="icon icon-camera">📷</div><div class="info"><div class="name">海康 MV-CS200</div><div class="spec">GigE · MQTT</div></div></div>
+        <div class="device-item" draggable="true" data-type="camera" data-name="巴斯勒 Basler ace 2" data-model="Basler"><div class="icon icon-camera">🎥</div><div class="info"><div class="name">巴斯勒 Basler ace 2</div><div class="spec">USB3.0 · MQTT</div></div></div>
+        <div class="device-item" draggable="true" data-type="camera" data-name="基恩士 CV-X100" data-model="KEYENCE"><div class="icon icon-camera">🔍</div><div class="info"><div class="name">基恩士 CV-X100</div><div class="spec">Ethernet · OPC UA</div></div></div>
+        <div class="device-item" draggable="true" data-type="camera" data-name="康耐视 In-Sight 2800" data-model="Cognex"><div class="icon icon-camera">👁️</div><div class="info"><div class="name">康耐视 In-Sight 2800</div><div class="spec">Ethernet · OPC UA</div></div></div>
+      </div>
+    </div>
+    <!-- 工业机器人（4 个） -->
+    <div class="device-category" data-cat="robot">
+      <div class="device-category-header" onclick="toggleCategory('robot')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🤖</span>
+        <span class="cat-name">工业机器人</span>
+        <span class="cat-count">4</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="robot" data-name="AGV 搬运机器人" data-model="AGV"><div class="icon icon-robot">🤖</div><div class="info"><div class="name">AGV 搬运机器人</div><div class="spec">MQTT</div></div></div>
+        <div class="device-item" draggable="true" data-type="robot" data-name="ABB IRB1200 六轴" data-model="ABB-IRB1200"><div class="icon icon-robot">🦾</div><div class="info"><div class="name">ABB IRB1200 六轴</div><div class="spec">Ethernet/IP</div></div></div>
+        <div class="device-item" draggable="true" data-type="robot" data-name="爱普生 LS6 SCARA" data-model="Epson-LS6"><div class="icon icon-robot">⚙️</div><div class="info"><div class="name">爱普生 LS6 SCARA</div><div class="spec">Modbus TCP</div></div></div>
+        <div class="device-item" draggable="true" data-type="robot" data-name="UR5e 协作机器人" data-model="UR5e"><div class="icon icon-robot">🤝</div><div class="info"><div class="name">UR5e 协作机器人</div><div class="spec">TCP/IP Socket</div></div></div>
+      </div>
+    </div>
+    <!-- 人机界面 HMI（3 个） -->
+    <div class="device-category" data-cat="hmi">
+      <div class="device-category-header" onclick="toggleCategory('hmi')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🖥️</span>
+        <span class="cat-name">人机界面 HMI</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="hmi" data-name="西门子 KTP700 Basic" data-model="KTP700"><div class="icon icon-hmi">🖥️</div><div class="info"><div class="name">西门子 KTP700 Basic</div><div class="spec">Profinet</div></div></div>
+        <div class="device-item" draggable="true" data-type="hmi" data-name="威纶通 TK6071iP" data-model="TK6071iP"><div class="icon icon-hmi">📱</div><div class="info"><div class="name">威纶通 TK6071iP</div><div class="spec">Modbus TCP</div></div></div>
+        <div class="device-item" draggable="true" data-type="hmi" data-name="昆仑通态 TPC7062Ti" data-model="TPC7062Ti"><div class="icon icon-hmi">📟</div><div class="info"><div class="name">昆仑通态 TPC7062Ti</div><div class="spec">Modbus TCP</div></div></div>
+      </div>
+    </div>
+    <!-- 气动与执行设备（4 个：2 阀岛 + 伺服 + 变频） -->
+    <div class="device-category" data-cat="actuator">
+      <div class="device-category-header" onclick="toggleCategory('actuator')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">⚙️</span>
+        <span class="cat-name">气动与执行</span>
+        <span class="cat-count">4</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="actuator" data-name="Festo VTSA 阀岛" data-model="Festo-VTSA"><div class="icon icon-actuator">🎛️</div><div class="info"><div class="name">Festo VTSA 阀岛</div><div class="spec">Profinet · 16 阀位</div></div></div>
+        <div class="device-item" draggable="true" data-type="actuator" data-name="SMC EX260 阀岛" data-model="SMC-EX260"><div class="icon icon-actuator">🎛️</div><div class="info"><div class="name">SMC EX260 阀岛</div><div class="spec">EtherCAT · 8 阀位</div></div></div>
+        <div class="device-item" draggable="true" data-type="actuator" data-name="西门子 V90 伺服" data-model="V90"><div class="icon icon-actuator">🔄</div><div class="info"><div class="name">西门子 V90 伺服</div><div class="spec">Profinet · 定位</div></div></div>
+        <div class="device-item" draggable="true" data-type="actuator" data-name="西门子 G120 变频器" data-model="G120"><div class="icon icon-actuator">🌀</div><div class="info"><div class="name">西门子 G120 变频器</div><div class="spec">Profinet · 传动</div></div></div>
+      </div>
+    </div>
+    <!-- 远程/分离 I/O（3 个） -->
+    <div class="device-category" data-cat="remoteio">
+      <div class="device-category-header" onclick="toggleCategory('remoteio')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🧩</span>
+        <span class="cat-name">远程/分离 I/O</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="remoteio" data-name="西门子 ET200SP" data-model="ET200SP"><div class="icon icon-remoteio">🧩</div><div class="info"><div class="name">西门子 ET200SP</div><div class="spec">Profinet · 分布式</div></div></div>
+        <div class="device-item" draggable="true" data-type="remoteio" data-name="倍福 EL1809 模块" data-model="EL1809"><div class="icon icon-remoteio">🔗</div><div class="info"><div class="name">倍福 EL1809 模块</div><div class="spec">EtherCAT · 16DI</div></div></div>
+        <div class="device-item" draggable="true" data-type="remoteio" data-name="图尔克 TBEN-L5" data-model="TBEN-L5"><div class="icon icon-remoteio">🧱</div><div class="info"><div class="name">图尔克 TBEN-L5</div><div class="spec">Modbus TCP · IP67</div></div></div>
+      </div>
+    </div>
+    <!-- 产线专用设备（3 个：打标机 + RFID + 扫码枪） -->
+    <div class="device-category" data-cat="production">
+      <div class="device-category-header" onclick="toggleCategory('production')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🏭</span>
+        <span class="cat-name">产线专用设备</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="production" data-name="大族 G20F 激光打标机" data-model="G20F"><div class="icon icon-production">⚡</div><div class="info"><div class="name">大族 G20F 激光打标机</div><div class="spec">TCP/IP + MQTT</div></div></div>
+        <div class="device-item" draggable="true" data-type="production" data-name="西门子 RF680R RFID" data-model="RF680R"><div class="icon icon-production">📡</div><div class="info"><div class="name">西门子 RF680R RFID</div><div class="spec">Profinet · 追溯</div></div></div>
+        <div class="device-item" draggable="true" data-type="production" data-name="基恩士 SR-2000 扫码枪" data-model="SR-2000"><div class="icon icon-production">🔍</div><div class="info"><div class="name">基恩士 SR-2000 扫码枪</div><div class="spec">TCP/IP · 读码</div></div></div>
+      </div>
+    </div>
+    <!-- 网络与安全设备（3 个：交换机 + 安全光幕 + 塔灯） -->
+    <div class="device-category" data-cat="netsafe">
+      <div class="device-category-header" onclick="toggleCategory('netsafe')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🛡️</span>
+        <span class="cat-name">网络与安全</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="netsafe" data-name="SCALANCE XR-324 交换机" data-model="XR324"><div class="icon icon-netsafe">🔀</div><div class="info"><div class="name">SCALANCE XR-324 交换机</div><div class="spec">千兆环网 · 冗余</div></div></div>
+        <div class="device-item" draggable="true" data-type="netsafe" data-name="SICK 安全光幕 i300" data-model="SICK-i300"><div class="icon icon-netsafe">🔆</div><div class="info"><div class="name">SICK 安全光幕 i300</div><div class="spec">OSSD 安全信号</div></div></div>
+        <div class="device-item" draggable="true" data-type="netsafe" data-name="三色塔灯（声光报警）" data-model="TOWER"><div class="icon icon-netsafe">🚨</div><div class="info"><div class="name">三色塔灯（声光报警）</div><div class="spec">IO-Link · 状态</div></div></div>
+      </div>
+    </div>
+    <!-- 网络与平台：分两类共 7 个（3 高性能网关 + 3 经济性网关 + 1 服务器） -->
+    <div class="device-category" data-cat="gateway-hi">
+      <div class="device-category-header" onclick="toggleCategory('gateway-hi')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🚀</span>
+        <span class="cat-name">高性能工业网关</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="gateway" data-name="西门子 RUGGEDCOM RX1500" data-model="高性能-RUGGEDCOM"><div class="icon icon-gw-hi">🚀</div><div class="info"><div class="name">西门子 RUGGEDCOM RX1500<span class="badge-perf">高性能</span></div><div class="spec">双核ARM · 10万点位</div></div></div>
+        <div class="device-item" draggable="true" data-type="gateway" data-name="倍福 EK1100 EtherCAT 主站" data-model="高性能-EK1100"><div class="icon icon-gw-hi">⚡</div><div class="info"><div class="name">倍福 EK1100 EtherCAT<span class="badge-perf">高性能</span></div><div class="spec">EtherCAT · 毫秒级</div></div></div>
+        <div class="device-item" draggable="true" data-type="gateway" data-name="研华 UNO-2484G" data-model="高性能-UNO-2484G"><div class="icon icon-gw-hi">🖥️</div><div class="info"><div class="name">研华 UNO-2484G<span class="badge-perf">高性能</span></div><div class="spec">4核i5 · 4×千兆</div></div></div>
+      </div>
+    </div>
+    <div class="device-category" data-cat="gateway-lo">
+      <div class="device-category-header" onclick="toggleCategory('gateway-lo')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">📡</span>
+        <span class="cat-name">经济性工业网关</span>
+        <span class="cat-count">3</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="gateway" data-name="西门子 IOT2050" data-model="经济-IOT2050"><div class="icon icon-gw-lo">📡</div><div class="info"><div class="name">西门子 IOT2050<span class="badge-eco">经济</span></div><div class="spec">入门级 ARM · 单工位</div></div></div>
+        <div class="device-item" draggable="true" data-type="gateway" data-name="研华 ECU-1051" data-model="经济-ECU-1051"><div class="icon icon-gw-lo">📡</div><div class="info"><div class="name">研华 ECU-1051<span class="badge-eco">经济</span></div><div class="spec">Modbus RTU · 低成本</div></div></div>
+        <div class="device-item" draggable="true" data-type="gateway" data-name="华为 AR502H" data-model="经济-AR502H"><div class="icon icon-gw-lo">📡</div><div class="info"><div class="name">华为 AR502H<span class="badge-eco">经济</span></div><div class="spec">MQTT/HTTP · 边缘IoT</div></div></div>
+      </div>
+    </div>
+    <div class="device-category" data-cat="server">
+      <div class="device-category-header" onclick="toggleCategory('server')">
+        <span class="cat-caret"></span>
+        <span class="cat-icon">🖥️</span>
+        <span class="cat-name">云平台服务器</span>
+        <span class="cat-count">1</span>
+      </div>
+      <div class="device-category-items">
+        <div class="device-item" draggable="true" data-type="server" data-name="云平台服务器" data-model="云平台服务器"><div class="icon icon-server">🖥️</div><div class="info"><div class="name">云平台服务器</div><div class="spec">MQTT Broker · 全量汇聚</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="canvas-area" id="canvas">
+    <svg id="svgLines"></svg>
+    <div class="toolbar">
+      <button id="btnConnect" onclick="toggleConnectMode()">🔗 连线</button>
+      <button onclick="loadPresetTopology()">📋 预设拓扑</button>
+      <button onclick="clearWorkspace()" title="清空画布并退出学生拓扑查看模式">🗑️ 清空</button>
+      <button onclick="exportTopology()">💾 导出</button>
+      <button onclick="document.getElementById('importFile').click()">📂 导入</button>
+      <input type="file" id="importFile" style="display:none" accept=".json" onchange="importTopology(event)">
+      <!-- 采样频率滑块 -->
+      <div class="frequency-control">
+        <span class="fc-label">采样频率</span>
+        <input type="range" id="freqSlider" min="1" max="10" step="1" value="2" oninput="changeFrequency(this.value)">
+        <span class="fc-val" id="freqVal">2 Hz</span>
+      </div>
+      <button id="btnSimulate" onclick="toggleSimulation()">▶ 启动采集</button>
+      <button id="btnLayout" onclick="autoLayout()" title="按 现场设备→网关→云平台 三层结构自动整理布局">🧲 自动布局</button>
+      <button id="btnFault" class="fault-btn" onclick="showFaultModal()">⚡ 注入故障</button>
+      <button id="btnDiagnose" onclick="gotoDiagnosis()" title="进入网络诊断与AI评价流程（建议先注入故障）">🔍 网络诊断</button>
+    </div>
+    <div class="mode-indicator" id="modeIndicator">🔗 连线模式：点击两个节点建立连接 | ESC退出 | 双击连线可删除</div>
+    <div class="connect-hint" id="connectHint">💡 从左侧拖拽设备到画布，或使用「加载预设拓扑」快速搭建</div>
+    <div class="node-props" id="nodeProps">
+      <h4 id="propsTitle">设备属性</h4>
+      <div class="prop-row"><span class="prop-label">设备类型</span><span class="prop-value" id="propType">-</span></div>
+      <div class="prop-row"><span class="prop-label">通信协议</span><span class="prop-value" id="propProto">-</span></div>
+      <div class="prop-row"><span class="prop-label">IP地址</span><span class="prop-value" id="propIP">-</span></div>
+      <div class="prop-row"><span class="prop-label">数据点位</span><span class="prop-value" id="propPoints">-</span></div>
+      <div class="prop-row"><span class="prop-label">链路策略</span><span class="prop-value" id="propPolicy">-</span></div>
+      <div class="prop-row"><span class="prop-label">采集频率</span><span class="prop-value" id="propFreq">-</span></div>
+      <div class="prop-row"><span class="prop-label">本机流量</span><span class="prop-value" id="propTraffic">-</span></div>
+      <div class="prop-row"><span class="prop-label">采集状态</span><span class="prop-value" id="propStatus">-</span></div>
+      <div class="prop-points-wrap" id="propPointList"></div>
+    </div>
+    <div class="node-tooltip" id="nodeTooltip"></div>
+    <!-- 点位分层图例：默认折叠为右下角小按钮，点击展开，避免遮挡画布节点 -->
+    <div class="point-legend-collapsed" id="pointLegendBtn" onclick="togglePointLegend()" title="点击查看点位图例">
+      📍 图例
+    </div>
+    <div class="point-legend" id="pointLegend" style="display:none;" onclick="event.stopPropagation();">
+      <div class="pl-title">点位采集图例</div>
+      <span><span class="lg-dot lg-core"></span>核心点位 · 必采，任何链路均上传</span>
+      <span><span class="lg-dot lg-opt-on"></span>拓展点位 · 所在链路为「排障」时上传</span>
+      <span><span class="lg-dot lg-opt-off"></span>拓展点位 · 所在链路为「核心」，未上传</span>
+      <span style="color:#b45309;">连线中点开关：<b>核心</b>＝仅必采 / <b style="background:#d97706;color:#fff;border-radius:4px;padding:0 4px;">排障</b>＝拓展全上传</span>
+      <span style="color:#64748b;font-size:10px;">点击节点可查看全部点位明细</span>
+      <span class="pl-close" onclick="togglePointLegend()">✕</span>
+    </div>
+  </div>
+  <!-- ============ 数据采集监控面板 ============ -->
+  <div class="data-panel">
+    <div class="panel-header">
+      <h3>📊 数据采集监控</h3>
+      <div class="protocol-tabs">
+        <button class="active" onclick="filterProtocol(this,'all')">全部</button>
+        <button onclick="filterProtocol(this,'Modbus')">Modbus</button>
+        <button onclick="filterProtocol(this,'OPC UA')">OPC UA</button>
+        <button onclick="filterProtocol(this,'MQTT')">MQTT</button>
+        <button onclick="filterProtocol(this,'Ethernet/IP')">Ethernet/IP</button>
+        <button onclick="filterProtocol(this,'IO-Link')">IO-Link</button>
+      </div>
+    </div>
+    <div class="data-table-wrap" id="dataTableWrap">
+      <table class="data-table"><thead><tr><th>设备</th><th>协议</th><th>数据点</th><th>数值</th><th>时间</th><th>状态</th></tr></thead><tbody id="dataBody"></tbody></table>
+      <div class="no-data" id="noDataHint"><div class="nd-icon">📡</div><div>请先搭建拓扑并启动采集</div></div>
+    </div>
+    <!-- 流量监控 sparkline -->
+    <div class="traffic-monitor">
+      <div class="tm-header">
+        <span>📈 实时流量趋势（最近 60 秒）</span>
+        <span id="tmPeak">峰值 -</span>
+      </div>
+      <div class="tm-canvas-wrap">
+        <canvas id="trafficSparkline" width="344" height="54"></canvas>
+        <span class="tm-legend">单位：kbps</span>
+      </div>
+    </div>
+    <!-- 5 张指标卡：在线设备 / 数据点位 / 实时流量 / 网关负载 / 成功率 -->
+    <div class="metrics-bar">
+      <div class="metric-card"><div class="val" id="metricDevices">0</div><div class="label">在线设备</div></div>
+      <div class="metric-card"><div class="val" id="metricPoints">0</div><div class="label">数据点位</div><div class="mode-indicator" id="policyIndicator" title="点位上传策略在连线中点的开关上：核心=仅必采点位；排障=可选拓展点位（含原始数据、原图）一并上传" style="font-size:11px;color:#0369a1;font-weight:600;margin-top:4px;">链路策略：点击连线开关切换</div></div>
+      <div class="metric-card"><div class="val" id="metricTraffic">0.0</div><div class="label">实时流量kbps</div></div>
+      <div class="metric-card"><div class="val" id="metricLoad">0%</div><div class="label">网关负载</div></div>
+      <div class="metric-card"><div class="val" id="metricOk">-</div><div class="label">成功率</div></div>
+    </div>
+  </div>
+</div>
+<!-- 故障弹窗 -->
+<div class="fault-modal" id="faultModal">
+  <div class="fault-modal-box">
+    <h2>⚡ 选择故障类型</h2>
+    <div class="fault-option" onclick="injectFault('mqtt_topic')">
+      <div class="fo-title">🔴 故障1：MQTT Topic映射不一致 <span class="fo-tag fo-tag-err">数据中断</span></div>
+      <div class="fo-desc">工业相机（如海康 MV-CS200）固件升级 v1.8→v2.1 后 MQTT 发布 Topic 变更（如 quality_01→quality_02），边缘网关订阅配置未同步更新，导致质检数据采集中断。<br><b>影响范围：所有 MQTT/USB3.0/GigE 协议的视觉相机</b></div>
+    </div>
+    <div class="fault-option" onclick="injectFault('modbus_conflict')">
+      <div class="fo-title">🟠 故障2：Modbus RTU 从站地址被重置 <span class="fo-tag fo-tag-warn">通信超时</span></div>
+      <div class="fo-desc">Modbus RTU 传感器（如温湿度、压力变送器、流量计）从站地址被重置为出厂默认 0（原配置 Slave ID=2），网关仍按 ID=2 轮询，通信地址不匹配导致数据归零、通信超时。<br><b>影响范围：所有 Modbus RTU/HART 协议的传感器</b></div>
+    </div>
+    <div class="fault-option" onclick="injectFault('mqtt_auth')">
+      <div class="fo-title">🔴 故障3：MQTT Broker 认证策略变更 <span class="fo-tag fo-tag-err">连接拒绝</span></div>
+      <div class="fo-desc">MQTT Broker 更新了安全策略，要求 TLS 证书认证，但 AGV 机器人仍使用旧的密码认证方式，导致连接被拒绝、设备离线。<br><b>影响范围：所有 MQTT 客户端（AGV、相机等）</b></div>
+    </div>
+    <button class="fault-modal-close" onclick="closeFaultModal()">取消</button>
+  </div>
+</div>
+<!-- 节点右键菜单 -->
+<div class="context-menu" id="contextMenu">
+  <div class="menu-item" onclick="showDeviceInfo()">ℹ️ 设备详情</div>
+  <div class="menu-item" onclick="resetNodeSize()">↔️ 重置大小</div>
+  <div class="menu-separator"></div>
+  <div class="menu-item" onclick="disconnectSelected()">🔌 断开所有连线</div>
+  <div class="menu-item danger" onclick="deleteSelected()">🗑️ 删除设备</div>
+</div>
+<!-- 连线右键菜单 -->
+<div class="context-menu" id="lineContextMenu">
+  <div class="menu-item danger" onclick="deleteSelectedLine()">🗑️ 删除此连线</div>
+</div>
+<!-- 删除确认 Toast（含撤销） -->
+<div class="delete-toast" id="deleteToast">
+  <span id="deleteToastMsg">已删除连线</span>
+  <button class="dt-undo" id="deleteToastUndo" onclick="undoDelete()">撤销 (3s)</button>
+</div>
+<!-- 新手引导 -->
+<div class="newbie-overlay" id="newbieOverlay">
+  <div class="newbie-mask"></div>
+  <div class="newbie-card">
+    <h2>🎓 网络拓扑仿真 · 新手引导</h2>
+    <div class="nc-steps">
+      <div class="nc-step"><div class="nc-step-num">1</div><div class="nc-step-content"><div class="nc-step-title">拖拽设备到画布</div><div class="nc-step-desc">从左侧设备库点击展开分类，拖拽设备到右侧画布。注意「高性能工业网关」vs「经济性工业网关」的选型区别。</div></div></div>
+      <div class="nc-step"><div class="nc-step-num">2</div><div class="nc-step-content"><div class="nc-step-title">点击「🔗 连线」按钮，按顺序点击两个节点</div><div class="nc-step-desc">建立设备之间的物理连接。传感器/PLC → 网关 → 云平台服务器 是标准三层结构。</div></div></div>
+      <div class="nc-step"><div class="nc-step-num">3</div><div class="nc-step-content"><div class="nc-step-title">调节采样频率，点击「▶ 启动采集」</div><div class="nc-step-desc">观察右侧实时流量变化：频率越高、点位越多、流量越大。观察网关负载是否过载（红色警告）。</div></div></div>
+      <div class="nc-step"><div class="nc-step-num">4</div><div class="nc-step-content"><div class="nc-step-title">点击「⚡ 注入故障」模拟异常</div><div class="nc-step-desc">体验工业现场典型故障：MQTT Topic 错配、Modbus 地址冲突、Broker 认证变更等。注入后点击横幅「🤖 启动AI诊断」或顶部「🔍 网络诊断」进入诊断评价流程。</div></div></div>
+    </div>
+    <button class="nc-btn" onclick="closeNewbieGuide()">开始实验 🚀</button>
+    <br><button class="nc-skip" onclick="dismissNewbieForever()">不再提示</button>
+  </div>
+</div>
+
+<!-- 学生拓扑查看横幅已移入顶栏内（见上方），确保全屏 / 不全屏 / 滚动状态均常驻可见 -->
+<script>
+// 错误捕获：方便父组件调试
+window.addEventListener('error', (e) => {
+  console.error('[network-topo] 错误:', e.message, e.filename, e.lineno);
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: 'iiot-sim-error',
+        source: 'network-topo',
+        payload: { message: e.message, file: e.filename, line: e.lineno }
+      }, '*');
+    }
+  } catch (_) { /* ignore */ }
+});
+
+// ===== 全局状态 =====
+let nodes=[],connections=[],nodeIdCounter=0;
+let connectMode=false,connectSource=null;
+let simulationRunning=false,simInterval=null,particleInterval=null;
+let dragNode=null,resizeNode=null,dragOffset={x:0,y:0};
+let currentFilter='all';
+let faultActive=false,faultNodeId=null,faultType=null;
+let currentFrequency=2; // 默认 2Hz
+let trafficHistory=[]; // 流量历史（kbps，最多 60 个点）
+let peakTraffic=0;
+let selectedConn=null; // 当前选中的连线
+let lastDeleted=null; // 撤销用：{type:'conn'|'node', data, index}
+let deleteToastTimer=null;
+
+const canvas=document.getElementById('canvas');
+const svgLines=document.getElementById('svgLines');
+
+// ===== 二级目录折叠 =====
+function toggleCategory(cat){
+  const el=document.querySelector(`.device-category[data-cat="${cat}"]`);
+  if(!el)return;
+  el.classList.toggle('open');
+  saveCategoryState();
+}
+function saveCategoryState(){
+  try{
+    const state={};
+    document.querySelectorAll('.device-category').forEach(c=>{
+      state[c.dataset.cat]=c.classList.contains('open');
+    });
+    localStorage.setItem('iiot_topo_cat_state',JSON.stringify(state));
+  }catch(_){}
+}
+function restoreCategoryState(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('iiot_topo_cat_state')||'{}');
+    document.querySelectorAll('.device-category').forEach(c=>{
+      if(saved[c.dataset.cat])c.classList.add('open');
+    });
+  }catch(_){}
+}
+function openCategory(cat){
+  const el=document.querySelector(`.device-category[data-cat="${cat}"]`);
+  if(el&&!el.classList.contains('open')){el.classList.add('open');saveCategoryState();}
+}
+
+// ===== 新手引导 =====
+function showNewbieGuide(){
+  try{if(localStorage.getItem('iiot_topo_newbie_dismissed')==='1')return;}catch(_){}
+  document.getElementById('newbieOverlay').classList.add('show');
+}
+function closeNewbieGuide(){
+  document.getElementById('newbieOverlay').classList.remove('show');
+}
+function dismissNewbieForever(){
+  try{localStorage.setItem('iiot_topo_newbie_dismissed','1');}catch(_){}
+  closeNewbieGuide();
+}
+
+// ===== 按型号精确映射（含带宽/容量字段） =====
+const deviceSpecs={
+  // PLC - 小型
+  'S7-200 SMART':{protocol:'OPC UA',ip:'192.168.1.11',points:'数字量 I0.0-I1.7 / 模拟量 AIW0-AIW6',category:'小型PLC',bandwidth:1},
+  'FX5U':{protocol:'OPC UA',ip:'192.168.1.12',points:'数字量 X0-X77 / 模拟量 SD0-SD1023',category:'小型PLC',bandwidth:1},
+  // PLC - 中型
+  'S7-1200':{protocol:'OPC UA',ip:'192.168.1.10',points:'寄存器 R0-R99 / 过程映像 I/Q',category:'中型PLC',bandwidth:1},
+  'S7-1500':{protocol:'OPC UA',ip:'192.168.1.13',points:'寄存器 %DB1000-%DB2999 / 工艺对象',category:'中型PLC',bandwidth:1},
+  'CompactLogix':{protocol:'Ethernet/IP',ip:'192.168.1.14',points:'标签 Tag0-Tag999 / 控制器 Logix',category:'中型PLC',bandwidth:1},
+  // PLC - 大型
+  'S7-300':{protocol:'OPC UA',ip:'192.168.1.15',points:'寄存器 DB0-DB65535 / Profinet IO',category:'大型PLC',bandwidth:1},
+  'ControlLogix':{protocol:'Ethernet/IP',ip:'192.168.1.16',points:'标签 Logix 全局 / 冗余控制器',category:'大型PLC',bandwidth:1},
+  // 传感器
+  '温湿度':{protocol:'Modbus RTU',ip:'COM3 / 串口',points:'温度(℃) / 湿度(%RH)',category:'环境',bandwidth:1},
+  '电容式':{protocol:'IO-Link',ip:'192.168.2.21',points:'感应距离 / 状态位',category:'接近开关',bandwidth:1},
+  '电感式':{protocol:'IO-Link',ip:'192.168.2.22',points:'感应距离 / 状态位',category:'接近开关',bandwidth:1},
+  '光电式':{protocol:'IO-Link',ip:'192.168.2.23',points:'检测状态 / 信号强度',category:'光电检测',bandwidth:1},
+  '压力':{protocol:'Modbus RTU',ip:'COM4 / 串口',points:'压力(MPa) / 介质温度',category:'过程仪表',bandwidth:1},
+  '流量':{protocol:'Modbus / HART',ip:'192.168.2.25',points:'瞬时流量 / 累计流量',category:'过程仪表',bandwidth:1},
+  // 视觉相机
+  '海康MV-CS200':{protocol:'GigE + MQTT',ip:'192.168.3.31',points:'帧率 / 缺陷数 / 曝光时间',category:'工业相机',bandwidth:1},
+  'Basler':{protocol:'USB3.0 + MQTT',ip:'192.168.3.32',points:'帧率 / 像素时钟 / ROI',category:'工业相机',bandwidth:1},
+  'KEYENCE':{protocol:'Ethernet + OPC UA',ip:'192.168.3.33',points:'检测结果 / 工具状态 / 拍照指令',category:'智能相机',bandwidth:1},
+  'Cognex':{protocol:'Ethernet + OPC UA',ip:'192.168.3.34',points:'缺陷分类 / 匹配分 / 定位坐标',category:'智能相机',bandwidth:1},
+  // 机器人
+  'AGV':{protocol:'MQTT',ip:'192.168.1.30',points:'位置 / 电量 / 任务状态',category:'AGV',bandwidth:1},
+  'ABB-IRB1200':{protocol:'Ethernet/IP',ip:'192.168.1.41',points:'6 轴角度 / 工具坐标 / IO 状态',category:'六轴机械臂',bandwidth:1},
+  'Epson-LS6':{protocol:'Modbus TCP',ip:'192.168.1.42',points:'J1-J4 角度 / 速度 / 扭矩',category:'SCARA',bandwidth:1},
+  'UR5e':{protocol:'TCP/IP Socket',ip:'192.168.1.43',points:'J1-J6 关节 / 末端速度 / 安全状态',category:'协作机器人',bandwidth:1},
+  // 人机界面 HMI
+  'KTP700':{protocol:'Profinet',ip:'192.168.4.51',points:'画面变量 / 报警记录 / 配方数据',category:'触摸屏 HMI',bandwidth:1},
+  'TK6071iP':{protocol:'Modbus TCP',ip:'192.168.4.52',points:'画面变量 / 报警记录 / 历史趋势',category:'触摸屏 HMI',bandwidth:1},
+  'TPC7062Ti':{protocol:'Modbus TCP',ip:'192.168.4.53',points:'画面变量 / 数据组态 / 报表',category:'触摸屏 HMI',bandwidth:1},
+  // 气动与执行
+  'Festo-VTSA':{protocol:'Profinet',ip:'192.168.5.61',points:'16 阀位状态 / 气压 / 诊断码',category:'阀岛',bandwidth:1},
+  'SMC-EX260':{protocol:'EtherCAT',ip:'192.168.5.62',points:'8 阀位状态 / 供给气压 / 报警',category:'阀岛',bandwidth:1},
+  'V90':{protocol:'Profinet',ip:'192.168.5.63',points:'轴位置 / 速度 / 扭矩 / 报警码',category:'伺服驱动',bandwidth:1},
+  'G120':{protocol:'Profinet',ip:'192.168.5.64',points:'频率 / 电流 / 母线电压 / 故障码',category:'变频器',bandwidth:1},
+  // 远程/分离 I/O
+  'ET200SP':{protocol:'Profinet',ip:'192.168.2.71',points:'32 点 DI/DO / 8 通道 AI',category:'分布式 I/O',bandwidth:1},
+  'EL1809':{protocol:'EtherCAT',ip:'192.168.2.72',points:'16 点 DI / 状态字 / 诊断',category:'EtherCAT I/O',bandwidth:1},
+  'TBEN-L5':{protocol:'Modbus TCP',ip:'192.168.2.73',points:'16 点 IO / 4 通道 AI/AO',category:'分布式 I/O',bandwidth:1},
+  // 产线专用设备
+  'G20F':{protocol:'TCP/IP + MQTT',ip:'192.168.6.81',points:'打标参数 / 标刻计数 / 振镜状态 / 故障',category:'激光打标机',bandwidth:1},
+  'RF680R':{protocol:'Profinet',ip:'192.168.6.82',points:'EPC 编码 / 读写次数 / 信号强度',category:'RFID 读写器',bandwidth:1},
+  'SR-2000':{protocol:'TCP/IP',ip:'192.168.6.83',points:'条码内容 / 读码成功率 / 频率',category:'条码读码器',bandwidth:1},
+  // 网络与安全设备
+  'XR324':{protocol:'Ethernet',ip:'192.168.1.91',points:'端口状态 / 环网冗余 / VLAN',category:'工业交换机',bandwidth:1},
+  'SICK-i300':{protocol:'OSSD 安全信号',ip:'安全回路 / 硬线',points:'遮蔽状态 / 诊断 / 循环测试',category:'安全光幕',bandwidth:1},
+  'TOWER':{protocol:'IO-Link',ip:'192.168.2.93',points:'红/黄/绿状态 / 蜂鸣器 / 亮度',category:'三色塔灯',bandwidth:1},
+  // ===== 网关：高性能（容量 10000 kbps） =====
+  '高性能-RUGGEDCOM':{protocol:'Modbus/OPC UA/MQTT/EtherCAT',ip:'192.168.1.1',points:'10000+点位 双核ARM',category:'高性能网关',bandwidth:1,gwCapacity:10000,gwLevel:'hi'},
+  '高性能-EK1100':{protocol:'EtherCAT 主站',ip:'192.168.1.2',points:'毫秒级运动控制',category:'高性能网关',bandwidth:1,gwCapacity:10000,gwLevel:'hi'},
+  '高性能-UNO-2484G':{protocol:'多协议',ip:'192.168.1.3',points:'4核i5 4×千兆',category:'高性能网关',bandwidth:1,gwCapacity:10000,gwLevel:'hi'},
+  // ===== 网关：经济性（容量 2000 kbps） =====
+  '经济-IOT2050':{protocol:'Modbus/MQTT',ip:'192.168.1.4',points:'入门级ARM 单工位',category:'经济性网关',bandwidth:1,gwCapacity:2000,gwLevel:'lo'},
+  '经济-ECU-1051':{protocol:'Modbus RTU',ip:'192.168.1.5',points:'低成本 小数据量',category:'经济性网关',bandwidth:1,gwCapacity:2000,gwLevel:'lo'},
+  '经济-AR502H':{protocol:'MQTT/HTTP',ip:'192.168.1.6',points:'边缘IoT 轻量级',category:'经济性网关',bandwidth:1,gwCapacity:2000,gwLevel:'lo'},
+  // 服务器/老兼容
+  '边缘网关':{protocol:'多协议转换',ip:'192.168.1.1',points:'Modbus/OPC UA/MQTT 转换',category:'网关',bandwidth:1,gwCapacity:2000,gwLevel:'lo'},
+  '云平台服务器':{protocol:'MQTT Broker',ip:'192.168.1.100',points:'全量数据汇聚 / 实时分析',category:'服务器',bandwidth:1,gwCapacity:99999,gwLevel:'server'},
+};
+// 协议权重：每点位每采样的字节数（用于流量估算）
+const PROTO_WEIGHT={
+  'Modbus RTU':8,'Modbus / HART':12,'Modbus TCP':16,
+  'OPC UA':24,'MQTT':32,'MQTT Broker':0,
+  'GigE + MQTT':64,'USB3.0 + MQTT':64,
+  'Ethernet + OPC UA':32,'Ethernet/IP':32,'IO-Link':16,
+  'NPN/PNP':8,'TCP/IP Socket':32,
+  'Profinet':16,'EtherCAT':8,'TCP/IP':16,'TCP/IP + MQTT':32,
+  'Ethernet':0,'OSSD 安全信号':4,
+  '多协议转换':0,'多协议':0,
+};
+const protocolMap={
+  plc:{protocol:'OPC UA',ip:'192.168.1.10',points:'寄存器R0-R99'},
+  sensor:{protocol:'Modbus RTU',ip:'COM3',points:'温度/湿度'},
+  camera:{protocol:'MQTT',ip:'192.168.1.20',points:'缺陷数/合格状态'},
+  robot:{protocol:'MQTT',ip:'192.168.1.30',points:'位置/电量/任务'},
+  gateway:{protocol:'多协议',ip:'192.168.1.1',points:'转换规则'},
+  server:{protocol:'MQTT Broker',ip:'192.168.1.100',points:'全量数据'},
+  hmi:{protocol:'Profinet',ip:'192.168.4.51',points:'画面变量/报警'},
+  actuator:{protocol:'Profinet',ip:'192.168.5.61',points:'阀位状态/气压'},
+  remoteio:{protocol:'Profinet',ip:'192.168.2.71',points:'DI/DO 通道'},
+  production:{protocol:'TCP/IP + MQTT',ip:'192.168.6.81',points:'打标参数/计数'},
+  netsafe:{protocol:'Ethernet',ip:'192.168.1.91',points:'端口状态/冗余'}
+};
+// 按 model 精确计算点位（用于指标卡）
+const pointsByModel={
+  'S7-200 SMART':24,'FX5U':64,'S7-1200':100,'S7-1500':200,'CompactLogix':150,
+  'S7-300':300,'ControlLogix':500,
+  '温湿度':2,'电容式':3,'电感式':3,'光电式':3,'压力':3,'流量':3,
+  '海康MV-CS200':6,'Basler':5,'KEYENCE':4,'Cognex':8,
+  'AGV':3,'ABB-IRB1200':12,'Epson-LS6':8,'UR5e':15,
+  'KTP700':8,'TK6071iP':6,'TPC7062Ti':6,
+  'Festo-VTSA':16,'SMC-EX260':8,'V90':10,'G120':8,
+  'ET200SP':32,'EL1809':16,'TBEN-L5':16,
+  'G20F':12,'RF680R':4,'SR-2000':3,
+  'XR324':0,'SICK-i300':2,'TOWER':3
+};
+const pointsByType={plc:50,sensor:3,camera:5,robot:5,gateway:1,server:1,hmi:6,actuator:8,remoteio:16,production:6,netsafe:3};
+
+// ===== 采集点位分层模型（核心 vs 可选拓展） =====
+// pointList 字段：name=点位名称；kind='core'必采/'optional'可选拓展；weight=流量权重(等效寄存器数)
+// 日常模式仅上传 core；调试排障模式额外上传 optional
+// 未配置 pointList 的设备自动回落到 pointsByModel/pointsByType（兼容旧数据）
+const pointListByModel={
+  // === PLC 控制器（7 款） ===
+  'S7-200 SMART':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:4},{name:'扫描周期',kind:'optional',weight:8},
+    {name:'CPU 负载',kind:'optional',weight:4},{name:'寄存器全量',kind:'optional',weight:6}
+  ],
+  'FX5U':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:16},
+    {name:'CPU 负载',kind:'optional',weight:8},{name:'寄存器全量',kind:'optional',weight:28}
+  ],
+  'S7-1200':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:24},
+    {name:'CPU 负载',kind:'optional',weight:12},{name:'寄存器全量',kind:'optional',weight:52}
+  ],
+  'S7-1500':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:48},
+    {name:'CPU 负载',kind:'optional',weight:24},{name:'寄存器全量',kind:'optional',weight:116}
+  ],
+  'CompactLogix':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:36},
+    {name:'CPU 负载',kind:'optional',weight:18},{name:'寄存器全量',kind:'optional',weight:84}
+  ],
+  'S7-300':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:72},
+    {name:'CPU 负载',kind:'optional',weight:36},{name:'寄存器全量',kind:'optional',weight:180}
+  ],
+  'ControlLogix':[
+    {name:'启停信号',kind:'core',weight:2},{name:'整机故障报警',kind:'core',weight:4},
+    {name:'良品判定',kind:'core',weight:6},{name:'扫描周期',kind:'optional',weight:120},
+    {name:'CPU 负载',kind:'optional',weight:60},{name:'寄存器全量',kind:'optional',weight:308}
+  ],
+  // === 传感器（6 款） ===
+  '温湿度':[
+    {name:'温度(℃)',kind:'core',weight:1},{name:'湿度(%RH)',kind:'core',weight:1},
+    {name:'露点温度',kind:'optional',weight:1},{name:'传感器状态',kind:'optional',weight:1},
+    {name:'电池电量',kind:'optional',weight:1}
+  ],
+  '电容式':[
+    {name:'物料有无',kind:'core',weight:1},{name:'感应距离',kind:'optional',weight:1},
+    {name:'工作电流',kind:'optional',weight:1},{name:'开关频率',kind:'optional',weight:1}
+  ],
+  '电感式':[
+    {name:'物料有无',kind:'core',weight:1},{name:'感应距离',kind:'optional',weight:1},
+    {name:'工作电流',kind:'optional',weight:1},{name:'开关频率',kind:'optional',weight:1}
+  ],
+  '光电式':[
+    {name:'物料到位信号',kind:'core',weight:1},{name:'信号强度',kind:'optional',weight:1},
+    {name:'响应时间',kind:'optional',weight:1},{name:'原始波形',kind:'optional',weight:4}
+  ],
+  '压力':[
+    {name:'压力值(MPa)',kind:'core',weight:1},{name:'量程校准',kind:'optional',weight:1},
+    {name:'温度补偿',kind:'optional',weight:1},{name:'诊断码',kind:'optional',weight:1}
+  ],
+  '流量':[
+    {name:'瞬时流量',kind:'core',weight:1},{name:'累计流量',kind:'core',weight:1},
+    {name:'介质温度',kind:'optional',weight:1},{name:'流体密度',kind:'optional',weight:1},
+    {name:'原始波形',kind:'optional',weight:4}
+  ],
+  // === 视觉相机（4 款） ===
+  '海康MV-CS200':[
+    {name:'检测结果',kind:'core',weight:1},{name:'缺陷数',kind:'core',weight:1},
+    {name:'帧率(fps)',kind:'optional',weight:1},{name:'曝光时间',kind:'optional',weight:1},
+    {name:'原始图像',kind:'optional',weight:48}
+  ],
+  'Basler':[
+    {name:'检测结果',kind:'core',weight:1},{name:'缺陷数',kind:'core',weight:1},
+    {name:'帧率(fps)',kind:'optional',weight:1},{name:'原始图像',kind:'optional',weight:40}
+  ],
+  'KEYENCE':[
+    {name:'检测结果',kind:'core',weight:1},{name:'缺陷数',kind:'core',weight:1},
+    {name:'帧率(fps)',kind:'optional',weight:1},{name:'ROI 图像',kind:'optional',weight:32}
+  ],
+  'Cognex':[
+    {name:'检测结果',kind:'core',weight:1},{name:'缺陷数',kind:'core',weight:1},
+    {name:'帧率(fps)',kind:'optional',weight:1},{name:'原始图像',kind:'optional',weight:64}
+  ],
+  // === 机器人（4 款） ===
+  'AGV':[
+    {name:'任务状态',kind:'core',weight:1},{name:'电量',kind:'core',weight:1},
+    {name:'当前位置',kind:'core',weight:1},{name:'路径轨迹',kind:'optional',weight:4},
+    {name:'诊断参数',kind:'optional',weight:4}
+  ],
+  'ABB-IRB1200':[
+    {name:'运行状态',kind:'core',weight:1},{name:'报警代码',kind:'core',weight:1},
+    {name:'6 轴角度',kind:'optional',weight:6},{name:'工具坐标',kind:'optional',weight:3},
+    {name:'扭矩',kind:'optional',weight:6}
+  ],
+  'Epson-LS6':[
+    {name:'运行状态',kind:'core',weight:1},{name:'报警代码',kind:'core',weight:1},
+    {name:'J1-J4 角度',kind:'optional',weight:4},{name:'速度',kind:'optional',weight:2},
+    {name:'扭矩',kind:'optional',weight:4}
+  ],
+  'UR5e':[
+    {name:'运行状态',kind:'core',weight:1},{name:'报警代码',kind:'core',weight:1},
+    {name:'J1-J6 关节',kind:'optional',weight:6},{name:'末端速度',kind:'optional',weight:3},
+    {name:'安全状态',kind:'optional',weight:4}
+  ],
+  // === HMI（3 款） ===
+  'KTP700':[
+    {name:'画面切换',kind:'core',weight:1},{name:'用户登录',kind:'core',weight:1},
+    {name:'配方数据',kind:'optional',weight:4},{name:'报警历史',kind:'optional',weight:4}
+  ],
+  'TK6071iP':[
+    {name:'画面切换',kind:'core',weight:1},{name:'用户登录',kind:'core',weight:1},
+    {name:'配方数据',kind:'optional',weight:3},{name:'报警历史',kind:'optional',weight:3}
+  ],
+  'TPC7062Ti':[
+    {name:'画面切换',kind:'core',weight:1},{name:'用户登录',kind:'core',weight:1},
+    {name:'配方数据',kind:'optional',weight:3},{name:'报警历史',kind:'optional',weight:3}
+  ],
+  // === 气动与执行（4 款） ===
+  'Festo-VTSA':[
+    {name:'阀位状态',kind:'core',weight:8},{name:'故障报警',kind:'core',weight:1},
+    {name:'气压',kind:'optional',weight:1},{name:'诊断码',kind:'optional',weight:4},
+    {name:'阀岛温度',kind:'optional',weight:1}
+  ],
+  'SMC-EX260':[
+    {name:'阀位状态',kind:'core',weight:4},{name:'故障报警',kind:'core',weight:1},
+    {name:'诊断码',kind:'optional',weight:2},{name:'响应时间',kind:'optional',weight:1}
+  ],
+  'V90':[
+    {name:'运行状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1},
+    {name:'转速/位置',kind:'optional',weight:4},{name:'扭矩',kind:'optional',weight:2},
+    {name:'诊断参数',kind:'optional',weight:4}
+  ],
+  'G120':[
+    {name:'运行状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1},
+    {name:'频率/电流',kind:'optional',weight:3},{name:'诊断参数',kind:'optional',weight:4}
+  ],
+  // === 远程/分离 I/O（3 款） ===
+  'ET200SP':[
+    {name:'模块状态',kind:'core',weight:2},{name:'故障报警',kind:'core',weight:2},
+    {name:'通道诊断',kind:'optional',weight:12},{name:'原始信号波形',kind:'optional',weight:16}
+  ],
+  'EL1809':[
+    {name:'模块状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1},
+    {name:'通道诊断',kind:'optional',weight:6},{name:'原始信号波形',kind:'optional',weight:8}
+  ],
+  'TBEN-L5':[
+    {name:'模块状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1},
+    {name:'通道诊断',kind:'optional',weight:6},{name:'原始信号波形',kind:'optional',weight:8}
+  ],
+  // === 产线专用设备（3 款） ===
+  'G20F':[
+    {name:'打标状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1},
+    {name:'激光功率',kind:'optional',weight:1},{name:'打标内容',kind:'optional',weight:2},
+    {name:'振镜位置',kind:'optional',weight:4},{name:'光斑图像',kind:'optional',weight:32}
+  ],
+  'RF680R':[
+    {name:'读卡状态',kind:'core',weight:1},{name:'标签 ID',kind:'core',weight:1},
+    {name:'信号强度',kind:'optional',weight:1},{name:'读卡次数',kind:'optional',weight:1}
+  ],
+  'SR-2000':[
+    {name:'扫描结果',kind:'core',weight:1},{name:'条码内容',kind:'core',weight:1},
+    {name:'信号强度',kind:'optional',weight:1},{name:'原始图像',kind:'optional',weight:24}
+  ],
+  // === 网络与安全（3 款） ===
+  'XR324':[
+    {name:'端口状态',kind:'core',weight:0},{name:'端口流量',kind:'optional',weight:0}
+  ],
+  'SICK-i300':[
+    {name:'保护状态',kind:'core',weight:1},{name:'故障报警',kind:'core',weight:1}
+  ],
+  'TOWER':[
+    {name:'当前颜色',kind:'core',weight:1},{name:'蜂鸣状态',kind:'core',weight:1},
+    {name:'亮度',kind:'optional',weight:1}
+  ],
+};
+
+// ===== 链路级点位上传策略 =====
+// 每条连线（链路）自带 policy 开关：
+//   core = 日常采集：仅推送【必采核心点位】（节省网关与云端负载）
+//   full = 调试排障：开启【可选拓展点位】，原始数据、视觉原图一并上传
+// 设备节点上传哪些点位，由它所连链路的 policy 决定（任一链路 full 即全量）
+
+// 查询某节点所在链路的采集策略
+function getNodePolicy(nodeId){
+  const links=connections.filter(c=>c.from===nodeId||c.to===nodeId);
+  if(links.some(c=>c.policy==='full'))return 'full';
+  return 'core';
+}
+// 统计当前链路策略（UI 提示 / 导出用）
+function countLinkPolicy(){
+  const total=connections.length;
+  const full=connections.filter(c=>c.policy==='full').length;
+  return {total,full,core:total-full};
+}
+
+// ===== 点位查询辅助 =====
+// 获取设备的全量点位清单（找不到时按类型兜底）
+function getFullPointList(model,type){
+  if(model && pointListByModel[model]) return pointListByModel[model];
+  // 类型兜底：plc 默认点位
+  if(type==='plc') return pointListByModel['S7-1200'];
+  if(type==='sensor') return pointListByModel['温湿度'];
+  if(type==='camera') return pointListByModel['海康MV-CS200'];
+  if(type==='robot') return pointListByModel['AGV'];
+  if(type==='hmi') return pointListByModel['KTP700'];
+  if(type==='actuator') return pointListByModel['Festo-VTSA'];
+  if(type==='remoteio') return pointListByModel['ET200SP'];
+  if(type==='production') return pointListByModel['G20F'];
+  if(type==='netsafe') return pointListByModel['SICK-i300'];
+  return [];
+}
+
+// 按链路策略过滤后的有效点位清单（policy 省略时按 core 处理）
+function getActivePointList(model,type,policy){
+  const list=getFullPointList(model,type);
+  if(policy==='full') return list;
+  return list.filter(p=>p.kind==='core');
+}
+
+// 获取有效点位的总权重（流量计算用）
+function getActivePointWeight(model,type,policy){
+  const list=getActivePointList(model,type,policy);
+  if(list.length===0){
+    // 兜底：未配置 pointList 的旧设备，按 pointsByModel/pointsByType 估算
+    return pointsByModel[model]||pointsByType[type]||1;
+  }
+  return list.reduce((s,p)=>s+(p.weight||0),0) || 1;
+}
+
+// 获取有效点位的个数（UI 提示用）
+function getActivePointCount(model,type,policy){
+  return getActivePointList(model,type,policy).length;
+}
+
+// 切换某条链路的采集策略（连线中点开关触发）
+function toggleConnectionPolicy(conn){
+  conn.policy=conn.policy==='full'?'core':'full';
+  const isFull=conn.policy==='full';
+  redrawLines();
+  updateMetrics();
+  if(simulationRunning)generateData();
+  refreshAllNodeBadges();
+  // 若被选中节点/链路相关，刷新属性面板
+  const sel=document.querySelector('.topo-node.selected');
+  if(sel){
+    const nid=parseInt(sel.id.split('-')[1]);
+    const n=nodes.find(x=>x.id===nid);
+    if(n)showNodeProps(n);
+  }
+  showPolicyToast(isFull
+    ?'⚡ 已开启全量采集：核心 + 可选拓展点位（含原始数据、视觉原图）一并上传'
+    :'✅ 已切换为日常采集：仅推送必采核心点位');
+}
+// 图例折叠/展开
+let pointLegendOpen=false;
+function togglePointLegend(){
+  pointLegendOpen=!pointLegendOpen;
+  const btn=document.getElementById('pointLegendBtn');
+  const panel=document.getElementById('pointLegend');
+  if(btn)btn.style.display=pointLegendOpen?'none':'block';
+  if(panel)panel.style.display=pointLegendOpen?'flex':'none';
+}
+
+// 策略切换轻提示
+let policyToastTimer=null;
+function showPolicyToast(msg){
+  let el=document.getElementById('policyToast');
+  if(!el){
+    el=document.createElement('div');el.id='policyToast';document.body.appendChild(el);
+  }
+  el.textContent=msg;el.classList.add('show');
+  if(policyToastTimer)clearTimeout(policyToastTimer);
+  policyToastTimer=setTimeout(()=>el.classList.remove('show'),2200);
+}
+
+// 在每个节点左上角显示点位上传角标，并按链路策略给节点加发光边框
+function refreshAllNodeBadges(){
+  document.querySelectorAll('.topo-node').forEach(n=>{
+    const model=n.dataset.model||'';
+    const type=n.dataset.type||'';
+    const nid=parseInt((n.id||'').split('-')[1]);
+    const policy=isNaN(nid)?'core':getNodePolicy(nid);
+    const full=getFullPointList(model,type);
+    const active=getActivePointList(model,type,policy);
+    const coreCount=full.filter(p=>p.kind==='core').length;
+    const optCount=full.length-coreCount;
+    const activeOptCount=active.filter(p=>p.kind==='optional').length;
+    // 节点发光边框：core=蓝色（仅核心），full=琥珀色（拓展已上传）
+    n.classList.remove('policy-core','policy-full');
+    if(policy==='full') n.classList.add('policy-full');
+    else if(policy==='core') n.classList.add('policy-core');
+    let badge=n.querySelector(':scope > .point-badge');
+    if(!badge){
+      badge=document.createElement('div');
+      badge.className='point-badge';
+      badge.style.cssText='position:absolute;top:-6px;left:-6px;display:flex;gap:2px;font-size:10px;font-weight:700;line-height:1;pointer-events:none;';
+      n.appendChild(badge);
+    }
+    let html='';
+    if(coreCount>0) html+=`<span title="核心点位已上传 ${coreCount} 项" style="background:#0369a1;color:#fff;border-radius:8px;padding:1px 5px;">●${coreCount}</span>`;
+    if(optCount>0){
+      const live=activeOptCount>0;
+      html+=`<span title="${live?`可选点位已上传 ${activeOptCount} 项（所在链路已开启排障全量采集）`:`可选点位 ${optCount} 项（所在链路为日常采集，未上传）`}" style="background:${live?'#d97706':'#cbd5e1'};color:#fff;border-radius:8px;padding:1px 5px;${live?'':'opacity:.65;'}">○${optCount}</span>`;
+    }
+    badge.innerHTML=html;
+  });
+}
+
+// ===== 故障定义 =====
+const faultDefs={
+  mqtt_topic:{
+    models:['海康MV-CS200','Basler','KEYENCE','Cognex'],
+    name:'MQTT Topic映射不一致',
+    targetLabel:'视觉相机',
+    bannerText:'视觉相机 MQTT 数据采集中断',
+    bannerSub:'根因：固件升级后Topic变更，网关订阅映射未同步',
+    level:'err',icon:'🚨',
+    nodeClass:'fault-err',dotClass:'status-offline'
+  },
+  modbus_conflict:{
+    models:['温湿度','压力','流量'],
+    name:'Modbus RTU从站地址被重置',
+    targetLabel:'Modbus 传感器',
+    bannerText:'Modbus 传感器 通信超时 数据归零',
+    bannerSub:'根因：从站地址被重置为出厂默认0，与网关轮询配置不匹配',
+    level:'warn',icon:'⚠️',
+    nodeClass:'fault-warn',dotClass:'status-warn'
+  },
+  mqtt_auth:{
+    models:['AGV'],
+    name:'MQTT Broker认证策略变更',
+    targetLabel:'MQTT 客户端',
+    bannerText:'AGV搬运机器人 MQTT 连接被拒绝',
+    bannerSub:'根因：Broker认证策略变更为TLS证书认证，客户端仍使用密码认证',
+    level:'err',icon:'🚨',
+    nodeClass:'fault-err',dotClass:'status-offline'
+  }
+};
+
+function findFaultTarget(type){
+  const def=faultDefs[type];
+  if(!def)return null;
+  return nodes.find(n=>def.models.includes(n.model))||null;
+}
+
+// ===== 拖拽（含落点预览 + 网格吸附） =====
+let dragSrc=null; // 记录当前拖拽的设备（ghost 预览用）
+const dropGhost=document.createElement('div');
+dropGhost.className='drop-ghost';
+dropGhost.id='dropGhost';
+canvas.appendChild(dropGhost);
+const SNAP=10; // 网格吸附间距（px）
+function snap(v){return Math.round(v/SNAP)*SNAP;}
+function showDropGhost(e){
+  const rect=canvas.getBoundingClientRect();
+  const mx=snap(e.clientX-rect.left),my=snap(e.clientY-rect.top);
+  dropGhost.style.left=mx+'px';dropGhost.style.top=my+'px';
+  dropGhost.style.display='flex';
+  dropGhost.textContent=dragSrc?dragSrc.name:'';
+}
+function hideDropGhost(){dropGhost.style.display='none';}
+document.querySelectorAll('.device-item').forEach(item=>{
+  item.addEventListener('dragstart',e=>{
+    dragSrc={type:item.dataset.type,name:item.dataset.name,model:item.dataset.model||item.dataset.name};
+    e.dataTransfer.setData('type',item.dataset.type);
+    e.dataTransfer.setData('name',item.dataset.name);
+    e.dataTransfer.setData('model',item.dataset.model||item.dataset.name);
+    e.dataTransfer.effectAllowed='copy';
+  });
+  item.addEventListener('dragend',()=>{dragSrc=null;hideDropGhost();});
+});
+canvas.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';showDropGhost(e);});
+canvas.addEventListener('dragleave',hideDropGhost);
+canvas.addEventListener('drop',e=>{
+  e.preventDefault();
+  hideDropGhost();
+  const type=e.dataTransfer.getData('type');
+  const name=e.dataTransfer.getData('name');
+  const model=e.dataTransfer.getData('model')||name;
+  if(!type){dragSrc=null;return;}
+  const rect=canvas.getBoundingClientRect();
+  // 节点左上角对齐鼠标位置（与拖拽 ghost 图一致）+ 网格吸附
+  const mx=snap(e.clientX-rect.left),my=snap(e.clientY-rect.top);
+  createNode(type,name,model,mx,my,'tl');
+  dragSrc=null;
+  document.getElementById('connectHint').style.display='none';
+  refreshDataPanel();
+});
+
+function createNode(type,name,model,x,y,anchor){
+  const id=++nodeIdCounter;
+  const spec=deviceSpecs[model]||protocolMap[type]||{protocol:'-',ip:'-',points:'-',category:'未分类'};
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  // 默认尺寸：网关稍大、其他相同
+  let w=110,h=60;
+  if(spec.gwLevel==='hi'){w=130;h=70;}
+  if(spec.gwLevel==='lo'){w=120;h=64;}
+  // anchor='tl'：传入的 x/y 是节点左上角（拖拽落点与鼠标对齐）；默认传中心坐标（预设/导入拓扑用）
+  if(anchor==='tl'){x+=w/2;y+=h/2;}
+  x=Math.max(w/2+5,Math.min(x,cw-w/2-5));
+  y=Math.max(h/2+5,Math.min(y,ch-h/2-5));
+  const node={id,type,name,model:model||name,x,y,w,h,protocol:spec.protocol,ip:spec.ip,points:spec.points,category:spec.category||'',gwLevel:spec.gwLevel||null,gwCapacity:spec.gwCapacity||0,status:'online',fault:false};
+  nodes.push(node);
+  const el=document.createElement('div');
+  let nodeCls=`topo-node node-${type}`;
+  if(spec.gwLevel==='hi')nodeCls+=' node-gateway-hi gateway-node';
+  else if(spec.gwLevel==='lo')nodeCls+=' node-gateway-lo gateway-node';
+  else if(type==='gateway')nodeCls+=' gateway-node';
+  el.className=nodeCls;
+  el.id=`node-${id}`;
+  el.dataset.model=model||name;
+  el.dataset.type=type;
+  el.style.width=w+'px';
+  el.style.height=h+'px';
+  el.style.left=(x-w/2)+'px';el.style.top=(y-h/2)+'px';
+  const sizeCls=h<60?'size-small':(h>75?'size-large':'');
+  if(sizeCls)el.classList.add(sizeCls);
+  const iconHtml=spec.gwLevel==='hi'?'🚀':(spec.gwLevel==='lo'?'📡':getModelIcon(model||name));
+  el.innerHTML=`<div class="status-dot status-online" id="dot-${id}"></div><div class="node-icon">${iconHtml}</div><div class="node-name">${name}</div><div class="node-protocol">${spec.protocol}</div><div class="gateway-load-bar"><div class="glb-fill" id="glb-${id}" style="width:0%"></div></div><div class="resize-handle" id="rh-${id}"></div>`;
+  // 拖拽（节点左上角对齐鼠标，与 dropGhost 行为完全一致）
+  el.addEventListener('mousedown',e=>{
+    if(e.target.classList.contains('resize-handle'))return; // 缩放手柄单独处理
+    if(connectMode){handleConnectClick(id);return;}
+    // 立即将节点左上角对齐到鼠标位置（消除"鼠标与设备不在同一点"的违和感）
+    const rect=canvas.getBoundingClientRect();
+    const cw=canvas.clientWidth,ch=canvas.clientHeight;
+    const nw=el.offsetWidth,nh=el.offsetHeight;
+    let nx=e.clientX-rect.left;
+    let ny=e.clientY-rect.top;
+    nx=snap(Math.max(0,Math.min(nx,cw-nw)));
+    ny=snap(Math.max(0,Math.min(ny,ch-nh)));
+    el.style.left=nx+'px';el.style.top=ny+'px';
+    dragNode=node;
+    dragNode.x=nx+nw/2;dragNode.y=ny+nh/2;
+    dragOffset={x:0,y:0}; // 鼠标已在节点左上角
+    selectNode(id);hideNodeTooltip();
+    redrawLines();
+  });
+  // 双击：缩放重置
+  el.addEventListener('dblclick',e=>{
+    if(e.target.classList.contains('resize-handle'))return;
+    resetNodeSizeById(id);
+  });
+  // 右键
+  el.addEventListener('contextmenu',e=>{e.preventDefault();selectNode(id);showContextMenu(e.clientX,e.clientY,'node');});
+  // 滚轮缩放
+  el.addEventListener('wheel',e=>{
+    if(!isNodeSelected(id))return;
+    e.preventDefault();
+    const delta=e.deltaY>0?-5:5;
+    resizeNodeByDelta(id,delta,delta*0.6);
+  },{passive:false});
+  // 鼠标进入：显示 tooltip
+  el.addEventListener('mouseenter',e=>showNodeTooltip(node,e));
+  el.addEventListener('mouseleave',()=>hideNodeTooltip());
+  el.addEventListener('mousemove',e=>updateNodeTooltipPos(e));
+  canvas.appendChild(el);
+  // 缩放手柄：单独绑定
+  const rh=document.getElementById(`rh-${id}`);
+  if(rh){
+    rh.addEventListener('mousedown',e=>{
+      e.stopPropagation();e.preventDefault();
+      resizeNode=node;resizeNode._startW=node.w;resizeNode._startH=node.h;
+      resizeNode._startMX=e.clientX;resizeNode._startMY=e.clientY;
+    });
+  }
+  // 点位上传角标（蓝色=核心已上传；橙色=拓展已上传；灰色=拓展未上传）
+  refreshAllNodeBadges();
+  updateMetrics();
+  return node;
+}
+function isNodeSelected(id){
+  return document.getElementById(`node-${id}`)?.classList.contains('selected');
+}
+function getIcon(type){
+  return{plc:'🔧',sensor:'🌡️',camera:'📷',robot:'🤖',gateway:'📡',server:'🖥️',hmi:'🖥️',actuator:'🎛️',remoteio:'🧩',production:'⚡',netsafe:'🛡️'}[type]||'📦';
+}
+function getModelIcon(model){
+  const m={
+    'S7-200 SMART':'🔌','FX5U':'🔧','S7-1200':'🔧','S7-1500':'⚙️','CompactLogix':'⚙️',
+    'S7-300':'🏭','ControlLogix':'🏭',
+    '温湿度':'🌡️','电容式':'⚡','电感式':'🧲','光电式':'💡','压力':'🌀','流量':'🌊',
+    '海康MV-CS200':'📷','Basler':'🎥','KEYENCE':'🔍','Cognex':'👁️',
+    'AGV':'🤖','ABB-IRB1200':'🦾','Epson-LS6':'⚙️','UR5e':'🤝',
+    'KTP700':'🖥️','TK6071iP':'📱','TPC7062Ti':'📟',
+    'Festo-VTSA':'🎛️','SMC-EX260':'🎛️','V90':'🔄','G120':'🌀',
+    'ET200SP':'🧩','EL1809':'🔗','TBEN-L5':'🧱',
+    'G20F':'⚡','RF680R':'📡','SR-2000':'🔍',
+    'XR324':'🔀','SICK-i300':'🔆','TOWER':'🚨',
+    '边缘网关':'📡','云平台服务器':'🖥️'
+  };
+  return m[model]||'📦';
+}
+
+// ===== 拖动节点 =====
+document.addEventListener('mousemove',e=>{
+  if(dragNode){
+    const el=document.getElementById(`node-${dragNode.id}`);
+    const rect=canvas.getBoundingClientRect();
+    const cw=canvas.clientWidth,ch=canvas.clientHeight;
+    const nw=dragNode.w,nh=dragNode.h;
+    // 节点左上角 = 鼠标相对 canvas 位置（与 dropGhost 完全一致）
+    let nx=e.clientX-rect.left;
+    let ny=e.clientY-rect.top;
+    nx=snap(Math.max(0,Math.min(nx,cw-nw))); // 网格吸附，保持布局整齐
+    ny=snap(Math.max(0,Math.min(ny,ch-nh)));
+    el.style.left=nx+'px';el.style.top=ny+'px';
+    dragNode.x=nx+nw/2;dragNode.y=ny+nh/2;
+    redrawLines();
+  }
+  if(resizeNode){
+    const el=document.getElementById(`node-${resizeNode.id}`);
+    const dx=e.clientX-resizeNode._startMX;
+    const dy=e.clientY-resizeNode._startMY;
+    let nw=Math.max(100,Math.min(220,resizeNode._startW+dx));
+    let nh=Math.max(60,Math.min(140,resizeNode._startH+dy*1.2));
+    resizeNode.w=nw;resizeNode.h=nh;
+    el.style.width=nw+'px';el.style.height=nh+'px';
+    // 自适应字号
+    el.classList.remove('size-small','size-large');
+    if(nh<60)el.classList.add('size-small');
+    else if(nh>75)el.classList.add('size-large');
+    // 重新居中
+    const rect=canvas.getBoundingClientRect();
+    const cw=canvas.clientWidth,ch=canvas.clientHeight;
+    let nx=el.offsetLeft,ny=el.offsetTop;
+    nx=Math.max(0,Math.min(nx,cw-nw));
+    ny=Math.max(0,Math.min(ny,ch-nh));
+    el.style.left=nx+'px';el.style.top=ny+'px';
+    resizeNode.x=nx+nw/2;resizeNode.y=ny+nh/2;
+    redrawLines();
+  }
+});
+document.addEventListener('mouseup',()=>{dragNode=null;resizeNode=null;});
+
+// ===== 连线模式 =====
+function toggleConnectMode(){
+  connectMode=!connectMode;
+  document.getElementById('btnConnect').classList.toggle('active',connectMode);
+  document.getElementById('modeIndicator').classList.toggle('show',connectMode);
+  connectSource=null;
+  document.querySelectorAll('.topo-node').forEach(n=>n.classList.remove('selected'));
+  clearLineSelection();
+}
+function handleConnectClick(id){
+  if(!connectSource){
+    connectSource=id;
+    document.getElementById(`node-${id}`).classList.add('selected');
+  }else if(connectSource!==id){
+    addConnection(connectSource,id);
+    document.getElementById(`node-${connectSource}`).classList.remove('selected');
+    connectSource=null;
+    toggleConnectMode();
+  }
+}
+function addConnection(fromId,toId,policy){
+  if(connections.find(c=>(c.from===fromId&&c.to===toId)||(c.from===toId&&c.to===fromId)))return;
+  // policy：core=日常（仅核心点位） full=排障（可选拓展点位一并上传）
+  connections.push({from:fromId,to:toId,status:'active',policy:policy==='full'?'full':'core'});
+  redrawLines();updateMetrics();
+}
+function deleteConnection(conn,showToast){
+  const idx=connections.indexOf(conn);
+  if(idx===-1)return;
+  lastDeleted={type:'conn',data:{...conn},index:idx};
+  connections.splice(idx,1);
+  redrawLines();updateMetrics();
+  if(showToast)showDeleteToast('已删除连线');
+}
+function clearLineSelection(){
+  selectedConn=null;
+  document.querySelectorAll('line.selected').forEach(l=>l.classList.remove('selected'));
+}
+
+// ===== 重绘连线（含点击/双击事件 + 中点策略开关） =====
+function redrawLines(){
+  svgLines.innerHTML='';
+  connections.forEach(conn=>{
+    const f=nodes.find(n=>n.id===conn.from),t=nodes.find(n=>n.id===conn.to);
+    if(!f||!t)return;
+    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',f.x);line.setAttribute('y1',f.y);
+    line.setAttribute('x2',t.x);line.setAttribute('y2',t.y);
+    line.dataset.connFrom=conn.from;line.dataset.connTo=conn.to;
+    if(faultActive&&(conn.from===faultNodeId||conn.to===faultNodeId)){
+      line.classList.add('fault');
+    }else{
+      line.classList.add('active');
+    }
+    // 全量采集链路：琥珀色加粗发光
+    if(conn.policy==='full') line.classList.add('full-policy');
+    // 选中样式
+    if(selectedConn&&((selectedConn.from===conn.from&&selectedConn.to===conn.to)||(selectedConn.from===conn.to&&selectedConn.to===conn.from))){
+      line.classList.add('selected');
+    }
+    // 点击选中
+    line.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      document.querySelectorAll('.topo-node.selected').forEach(n=>n.classList.remove('selected'));
+      clearLineSelection();
+      selectedConn=conn;
+      line.classList.add('selected');
+    });
+    // 双击删除
+    line.addEventListener('dblclick',(e)=>{
+      e.stopPropagation();
+      deleteConnection(conn,true);
+    });
+    // 右键
+    line.addEventListener('contextmenu',(e)=>{
+      e.preventDefault();e.stopPropagation();
+      selectedConn=conn;
+      showContextMenu(e.clientX,e.clientY,'line');
+    });
+    svgLines.appendChild(line);
+    // ===== 链路中点策略开关（核心 ⇄ 排障全量） =====
+    const isFull=conn.policy==='full';
+    const mx=(f.x+t.x)/2,my=(f.y+t.y)/2;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','policy-switch');
+    g.style.cursor='pointer';
+    g.setAttribute('title',isFull
+      ?'排障全量采集：核心 + 可选拓展点位（含原始数据、视觉原图）一并上传。点击切回仅核心'
+      :'日常采集：仅推送必采核心点位。点击开启排障全量采集（可选拓展点位一并上传）');
+    // 胶囊底板
+    const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('class','ps-rect');
+    rect.setAttribute('x',mx-21);rect.setAttribute('y',my-10);
+    rect.setAttribute('width',42);rect.setAttribute('height',20);
+    rect.setAttribute('rx',10);
+    rect.setAttribute('fill',isFull?'#d97706':'#ffffff');
+    rect.setAttribute('stroke',isFull?'#fbbf24':'#94a3b8');
+    rect.setAttribute('stroke-width',1.5);
+    g.appendChild(rect);
+    // 状态指示小圆点（左）
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('cx',mx-13);dot.setAttribute('cy',my);
+    dot.setAttribute('r',3.5);
+    dot.setAttribute('fill',isFull?'#fde68a':'#10b981');
+    g.appendChild(dot);
+    // 文本（右）
+    const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+    txt.setAttribute('x',mx-4);txt.setAttribute('y',my+3.5);
+    txt.setAttribute('font-size','10');
+    txt.setAttribute('font-weight','700');
+    txt.setAttribute('fill',isFull?'#ffffff':'#475569');
+    txt.setAttribute('text-anchor','middle');
+    txt.textContent=isFull?'排障':'核心';
+    g.appendChild(txt);
+    // 点击切换策略（不触发连线选中）
+    g.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      toggleConnectionPolicy(conn);
+    });
+    svgLines.appendChild(g);
+  });
+}
+
+// ===== 预设拓扑（自动展开前 4 类+网关类） =====
+function loadPresetTopology(){
+  closeTopoViewBanner();
+  studentTopoApplied=false;
+  clearAll();
+  openCategory('plc');openCategory('sensor');openCategory('camera');openCategory('robot');openCategory('gateway-hi');
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  const leftPad=160, topPad=80, bottomPad=100, rightPad=160;
+  const maxX=cw-rightPad;
+  const maxY=ch-bottomPad;
+  const minY=topPad+20;
+  const midX=(leftPad+maxX)/2;
+  const rowYs=[ch*.18, ch*.42, ch*.66];
+  const s=createNode('sensor','温湿度传感器','温湿度',leftPad,Math.max(minY,rowYs[0]));
+  const p=createNode('plc','西门子 S7-1200','S7-1200',leftPad,Math.max(minY,Math.min(rowYs[1],maxY*.5)));
+  const c=createNode('camera','海康 MV-CS200','海康MV-CS200',leftPad,Math.max(minY,Math.min(rowYs[2],maxY)));
+  const cs=createNode('sensor','电容式接近传感器','电容式',midX*.55,Math.max(minY,ch*.15));
+  const r=createNode('robot','AGV 搬运机器人','AGV',Math.max(leftPad+30,Math.min(midX*.55,maxX*.45)),maxY*.95);
+  const g=createNode('gateway','西门子 RUGGEDCOM RX1500','高性能-RUGGEDCOM',midX,Math.max(minY,ch*.42));
+  const sv=createNode('server','云平台服务器','云平台服务器',maxX,Math.max(minY,Math.min(ch*.42,maxY*.45)));
+  setTimeout(()=>{
+    addConnection(s.id,g.id);
+    addConnection(p.id,g.id);
+    addConnection(c.id,g.id);
+    addConnection(cs.id,p.id);
+    addConnection(r.id,g.id);
+    addConnection(g.id,sv.id);
+  },50);
+  document.getElementById('connectHint').style.display='none';
+  refreshDataPanel();
+}
+
+// ===== 清空（含新手引导重置） =====
+function clearAll(){
+  nodes=[];connections=[];nodeIdCounter=0;
+  selectedConn=null;lastDeleted=null;
+  document.querySelectorAll('.topo-node').forEach(n=>n.remove());
+  svgLines.innerHTML='';
+  document.getElementById('dataBody').innerHTML='';
+  document.getElementById('connectHint').style.display='';
+  document.getElementById('nodeProps').classList.remove('show');
+  document.getElementById('noDataHint').style.display='';
+  document.getElementById('lineContextMenu').style.display='none';
+  stopSimulation();clearFault();updateMetrics();
+}
+// 工具栏「🗑️ 清空」按钮：同时退出学生拓扑查看模式（清除持久化记录 + 隐藏横幅）
+function clearWorkspace(){
+  closeTopoViewBanner();
+  studentTopoApplied=false;
+  clearAll();
+}
+
+// ===== 选择节点 =====
+function selectNode(id){
+  document.querySelectorAll('.topo-node').forEach(n=>n.classList.remove('selected'));
+  clearLineSelection();
+  const el=document.getElementById(`node-${id}`);
+  if(el)el.classList.add('selected');
+  const node=nodes.find(n=>n.id===id);
+  if(node)showNodeProps(node);
+}
+function showNodeProps(node){
+  const p=document.getElementById('nodeProps');
+  document.getElementById('propsTitle').textContent=node.name;
+  document.getElementById('propType').textContent=node.category||node.type.toUpperCase();
+  document.getElementById('propProto').textContent=node.protocol;
+  document.getElementById('propIP').textContent=node.ip;
+  // 点位分层统计：核心 X · 拓展 Y（替代旧的单一数字）
+  const fullList=getFullPointList(node.model,node.type);
+  const coreCnt=fullList.filter(pt=>pt.kind==='core').length;
+  const optCnt=fullList.length-coreCnt;
+  document.getElementById('propPoints').textContent=(node.type==='gateway'||node.type==='server')
+    ?'-（汇聚节点）'
+    :(fullList.length>0?`核心 ${coreCnt} · 拓展 ${optCnt}`:`${node.points}（未分层）`);
+  const nodePolicy=getNodePolicy(node.id);
+  document.getElementById('propPolicy').innerHTML=(node.type==='gateway'||node.type==='server')
+    ?'<span style="color:#64748b;">— 汇聚节点</span>'
+    :(nodePolicy==='full'
+      ?'<span style="color:#d97706;font-weight:700;">⚡ 排障全量 · 核心+拓展上传</span>'
+      :'<span style="color:#0369a1;font-weight:700;">● 日常采集 · 仅核心上传</span>');
+  document.getElementById('propFreq').textContent=currentFrequency+' Hz';
+  // 估算单设备流量（按该节点所在链路的策略过滤有效点位权重）
+  const weight=PROTO_WEIGHT[node.protocol]||0;
+  const devKbps=node.type==='gateway'||node.type==='server'?'-':(getActivePointWeight(node.model,node.type,nodePolicy)*weight*currentFrequency*8/1024).toFixed(2)+' kbps';
+  document.getElementById('propTraffic').textContent=devKbps;
+  document.getElementById('propStatus').textContent=node.fault?(faultType==='modbus_conflict'?'⚠️ 通信超时':'🔴 故障'):(node.status==='online'?'🟢 在线':'🔴 离线');
+  // 点位明细清单：逐项展示 名称 / 核心·拓展 / 上传状态（按该节点链路策略）
+  const plc=document.getElementById('propPointList');
+  if(plc){
+    if(node.type==='gateway'||node.type==='server'||fullList.length===0){
+      plc.innerHTML='<div class="pl-empty">— 该节点无分层点位配置 —</div>';
+    }else{
+      const actNames=new Set(getActivePointList(node.model,node.type,nodePolicy).map(pt=>pt.name));
+      plc.innerHTML=
+        '<div class="pl-head"><span>点位清单（共 '+fullList.length+' 项）</span><span style="font-weight:400;color:'+(nodePolicy==='full'?'#d97706':'#64748b')+';">'+(nodePolicy==='full'?'链路：排障全量上传':'链路：仅核心上传')+'</span></div>'+
+        fullList.map(pt=>{
+          const core=pt.kind==='core';
+          const up=core||actNames.has(pt.name);
+          return '<div class="pl-item'+(up?'':' pl-off')+'">'
+            +'<span class="pl-dot '+(core?'pl-core':'pl-opt')+'">'+(core?'●':'○')+'</span>'
+            +'<span class="pl-name" title="'+pt.name+'">'+pt.name+'</span>'
+            +'<span class="pl-kind '+(core?'k-core':'k-opt')+'">'+(core?'核心':'拓展')+'</span>'
+            +'<span class="pl-up '+(up?'u-on':'u-off')+'">'+(up?'✓ 上传':'○ 未上传')+'</span>'
+            +'</div>';
+        }).join('');
+    }
+  }
+  p.classList.add('show');
+}
+
+// ===== 上下文菜单（节点/连线） =====
+let contextMenuTarget=null;
+function showContextMenu(x,y,kind){
+  hideContextMenus();
+  contextMenuTarget=kind;
+  const m=kind==='node'?document.getElementById('contextMenu'):document.getElementById('lineContextMenu');
+  m.style.left=x+'px';m.style.top=y+'px';m.style.display='block';
+}
+function hideContextMenus(){
+  document.getElementById('contextMenu').style.display='none';
+  document.getElementById('lineContextMenu').style.display='none';
+}
+document.addEventListener('click',(e)=>{
+  if(e.target.closest('.context-menu'))return;
+  hideContextMenus();
+  if(!e.target.closest('.topo-node')&&!e.target.closest('line')){
+    document.querySelectorAll('.topo-node').forEach(n=>n.classList.remove('selected'));
+    document.getElementById('nodeProps').classList.remove('show');
+    clearLineSelection();
+  }
+});
+
+function deleteSelected(){
+  const sel=document.querySelector('.topo-node.selected');if(!sel)return;
+  const id=parseInt(sel.id.split('-')[1]);
+  deleteNode(id,true);
+}
+function deleteNode(id,showToast){
+  const idx=nodes.findIndex(n=>n.id===id);
+  if(idx===-1)return;
+  const node=nodes[idx];
+  const el=document.getElementById(`node-${id}`);
+  const relatedConns=connections.filter(c=>c.from===id||c.to===id).map(c=>({...c}));
+  lastDeleted={type:'node',data:{node:{...node},conns:relatedConns},index:idx};
+  if(faultNodeId===id)clearFault();
+  nodes.splice(idx,1);
+  connections=connections.filter(c=>c.from!==id&&c.to!==id);
+  if(el)el.remove();
+  redrawLines();
+  document.getElementById('nodeProps').classList.remove('show');
+  updateMetrics();refreshDataPanel();
+  if(showToast)showDeleteToast('已删除设备（含 ' + relatedConns.length + ' 条连线）');
+}
+function disconnectSelected(){
+  const sel=document.querySelector('.topo-node.selected');if(!sel)return;
+  const id=parseInt(sel.id.split('-')[1]);
+  const before=connections.length;
+  connections=connections.filter(c=>c.from!==id&&c.to!==id);
+  if(connections.length<before){
+    showDeleteToast('已断开 ' + (before-connections.length) + ' 条连线');
+  }
+  redrawLines();updateMetrics();
+}
+function deleteSelectedLine(){
+  if(selectedConn){
+    deleteConnection(selectedConn,true);
+    selectedConn=null;
+  }
+  hideContextMenus();
+}
+function showDeviceInfo(){
+  const sel=document.querySelector('.topo-node.selected');if(!sel)return;
+  const id=parseInt(sel.id.split('-')[1]);
+  const node=nodes.find(n=>n.id===id);
+  if(node){
+    const pts=pointsByModel[node.model]||pointsByType[node.type]||1;
+    alert(`设备详情\n\n名称：${node.name}\n分类：${node.category}\n协议：${node.protocol}\nIP：${node.ip}\n数据点：${node.points}\n点位数量：${pts}\n尺寸：${node.w}×${node.h}\n状态：${node.fault?'故障':node.status}`);
+  }
+}
+function resetNodeSize(){
+  const sel=document.querySelector('.topo-node.selected');if(!sel)return;
+  const id=parseInt(sel.id.split('-')[1]);
+  resetNodeSizeById(id);
+}
+function resetNodeSizeById(id){
+  const node=nodes.find(n=>n.id===id);if(!node)return;
+  let w=110,h=60;
+  if(node.gwLevel==='hi'){w=130;h=70;}
+  else if(node.gwLevel==='lo'){w=120;h=64;}
+  node.w=w;node.h=h;
+  const el=document.getElementById(`node-${id}`);
+  el.style.width=w+'px';el.style.height=h+'px';
+  el.classList.remove('size-small','size-large');
+  redrawLines();
+}
+function resizeNodeByDelta(id,dw,dh){
+  const node=nodes.find(n=>n.id===id);if(!node)return;
+  const nw=Math.max(100,Math.min(220,node.w+dw));
+  const nh=Math.max(60,Math.min(140,node.h+dh));
+  node.w=nw;node.h=nh;
+  const el=document.getElementById(`node-${id}`);
+  el.style.width=nw+'px';el.style.height=nh+'px';
+  el.classList.remove('size-small','size-large');
+  if(nh<60)el.classList.add('size-small');
+  else if(nh>75)el.classList.add('size-large');
+  redrawLines();
+}
+
+// ===== 撤销删除（含 3 秒倒计时） =====
+function showDeleteToast(msg){
+  const toast=document.getElementById('deleteToast');
+  document.getElementById('deleteToastMsg').textContent=msg;
+  toast.classList.add('show');
+  let left=3;
+  const undoBtn=document.getElementById('deleteToastUndo');
+  undoBtn.textContent='撤销 ('+left+'s)';
+  if(deleteToastTimer)clearInterval(deleteToastTimer);
+  deleteToastTimer=setInterval(()=>{
+    left--;
+    if(left<=0){
+      clearInterval(deleteToastTimer);
+      toast.classList.remove('show');
+      lastDeleted=null;
+    }else{
+      undoBtn.textContent='撤销 ('+left+'s)';
+    }
+  },1000);
+}
+function undoDelete(){
+  if(!lastDeleted)return;
+  if(deleteToastTimer){clearInterval(deleteToastTimer);deleteToastTimer=null;}
+  document.getElementById('deleteToast').classList.remove('show');
+  if(lastDeleted.type==='conn'){
+    connections.splice(lastDeleted.index,0,lastDeleted.data);
+  }else if(lastDeleted.type==='node'){
+    const n=lastDeleted.data.node;
+    nodes.splice(lastDeleted.index,0,n);
+    lastDeleted.data.conns.forEach(c=>connections.push(c));
+    // 重新创建 DOM
+    createNodeDOM(n);
+  }
+  lastDeleted=null;
+  redrawLines();updateMetrics();refreshDataPanel();
+}
+function createNodeDOM(node){
+  // 节点已通过 createNode 时已存数据；用于撤销时还原 DOM
+  const el=document.createElement('div');
+  const spec=deviceSpecs[node.model]||{};
+  let nodeCls=`topo-node node-${node.type}`;
+  if(spec.gwLevel==='hi')nodeCls+=' node-gateway-hi gateway-node';
+  else if(spec.gwLevel==='lo')nodeCls+=' node-gateway-lo gateway-node';
+  else if(node.type==='gateway')nodeCls+=' gateway-node';
+  el.className=nodeCls;
+  el.id=`node-${node.id}`;
+  el.dataset.model=node.model||'';
+  el.dataset.type=node.type||'';
+  el.style.width=node.w+'px';el.style.height=node.h+'px';
+  el.style.left=(node.x-node.w/2)+'px';el.style.top=(node.y-node.h/2)+'px';
+  const sizeCls=node.h<60?'size-small':(node.h>75?'size-large':'');
+  if(sizeCls)el.classList.add(sizeCls);
+  const iconHtml=spec.gwLevel==='hi'?'🚀':(spec.gwLevel==='lo'?'📡':getModelIcon(node.model));
+  el.innerHTML=`<div class="status-dot status-online" id="dot-${node.id}"></div><div class="node-icon">${iconHtml}</div><div class="node-name">${node.name}</div><div class="node-protocol">${node.protocol}</div><div class="gateway-load-bar"><div class="glb-fill" id="glb-${node.id}" style="width:0%"></div></div><div class="resize-handle" id="rh-${node.id}"></div>`;
+  el.addEventListener('mousedown',e=>{
+    if(e.target.classList.contains('resize-handle'))return;
+    if(connectMode){handleConnectClick(node.id);return;}
+    dragNode=node;dragOffset={x:e.clientX-el.offsetLeft,y:e.clientY-el.offsetTop};
+    selectNode(node.id);hideNodeTooltip();
+  });
+  el.addEventListener('dblclick',e=>{if(e.target.classList.contains('resize-handle'))return;resetNodeSizeById(node.id);});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();selectNode(node.id);showContextMenu(e.clientX,e.clientY,'node');});
+  el.addEventListener('wheel',e=>{if(!isNodeSelected(node.id))return;e.preventDefault();const delta=e.deltaY>0?-5:5;resizeNodeByDelta(node.id,delta,delta*0.6);},{passive:false});
+  el.addEventListener('mouseenter',e=>showNodeTooltip(node,e));
+  el.addEventListener('mouseleave',()=>hideNodeTooltip());
+  el.addEventListener('mousemove',e=>updateNodeTooltipPos(e));
+  canvas.appendChild(el);
+  const rh=document.getElementById(`rh-${node.id}`);
+  if(rh){
+    rh.addEventListener('mousedown',e=>{
+      e.stopPropagation();e.preventDefault();
+      resizeNode=node;resizeNode._startW=node.w;resizeNode._startH=node.h;
+      resizeNode._startMX=e.clientX;resizeNode._startMY=e.clientY;
+    });
+  }
+}
+
+// ===== 节点悬浮 tooltip =====
+function showNodeTooltip(node,e){
+  const t=document.getElementById('nodeTooltip');
+  const policy=getNodePolicy(node.id);
+  const fullList=getFullPointList(node.model,node.type);
+  const activeList=getActivePointList(node.model,node.type,policy);
+  const coreCount=fullList.filter(p=>p.kind==='core').length;
+  const optCount=fullList.length-coreCount;
+  const activeOptCount=activeList.filter(p=>p.kind==='optional').length;
+  const weight=PROTO_WEIGHT[node.protocol]||0;
+  const devKbps=node.type==='gateway'||node.type==='server'?'汇聚/转发':(getActivePointWeight(node.model,node.type,policy)*weight*currentFrequency*8/1024).toFixed(2)+' kbps';
+  const capacity=node.gwCapacity?'<div class="nt-row"><span class="nt-label">网关容量</span><span class="nt-value">'+node.gwCapacity+' kbps</span></div>':'';
+  const policyHtml=policy==='full'
+    ?'<span style="color:#fbbf24;">⚡ 排障全量 · 核心+拓展上传中</span>'
+    :'<span style="color:#38bdf8;">● 日常采集 · 仅核心点位</span>';
+  t.innerHTML=`<div class="nt-title">${node.name}</div>
+    <div class="nt-row"><span class="nt-label">分类</span><span class="nt-value">${node.category}</span></div>
+    <div class="nt-row"><span class="nt-label">协议</span><span class="nt-value">${node.protocol}</span></div>
+    <div class="nt-row"><span class="nt-label">IP</span><span class="nt-value">${node.ip}</span></div>
+    <div class="nt-row"><span class="nt-label">点位</span><span class="nt-value">核心 ${coreCount} · 拓展 ${optCount}（上传 ${activeOptCount}）</span></div>
+    <div class="nt-row"><span class="nt-label">策略</span><span class="nt-value">${policyHtml}</span></div>
+    <div class="nt-row"><span class="nt-label">流量</span><span class="nt-value">${devKbps}</span></div>
+    ${capacity}
+    <div class="nt-row" style="margin-top:6px;padding-top:6px;border-top:1px solid #334155;font-size:11px;color:#94a3b8;"><span>💡 拖角缩放 · 双击重置 · 右键删除</span></div>`;
+  t.classList.add('show');
+  updateNodeTooltipPos(e);
+}
+function updateNodeTooltipPos(e){
+  const t=document.getElementById('nodeTooltip');
+  if(!t.classList.contains('show'))return;
+  t.style.left=(e.clientX+14)+'px';
+  t.style.top=(e.clientY+14)+'px';
+}
+function hideNodeTooltip(){
+  document.getElementById('nodeTooltip').classList.remove('show');
+}
+
+// ===== 键盘事件 =====
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='Escape'){
+    if(connectMode)toggleConnectMode();
+    if(document.getElementById('faultModal').classList.contains('show'))closeFaultModal();
+  }
+  if(e.key==='Delete'||e.key==='Backspace'){
+    if(selectedConn){deleteConnection(selectedConn,true);selectedConn=null;}
+  }
+});
+
+// ===== 流量计算（按各链路策略过滤点位 + 真实点位权重） =====
+function calculateTraffic(){
+  const devs=getActiveDataDevices();
+  const freq=currentFrequency;
+  let totalKbps=0;
+  const perDev=[];
+  devs.forEach(dev=>{
+    // 该设备所在链路的策略：core=仅核心点位，full=核心+可选拓展全量
+    const policy=getNodePolicy(dev.id);
+    const pointWeight=getActivePointWeight(dev.model,dev.type,policy);
+    const protoWeight=PROTO_WEIGHT[dev.protocol]||0;
+    // 流量 = 激活点位权重 × 协议权重 × 频率 × 8 / 1024
+    const devKbps=pointWeight*protoWeight*freq*8/1024;
+    totalKbps+=devKbps;
+    perDev.push({id:dev.id,kbps:devKbps,model:dev.model,weight:pointWeight,protocol:dev.protocol,policy});
+  });
+  // 找网关算负载
+  const gateway=nodes.find(n=>n.type==='gateway');
+  const cap=gateway?((deviceSpecs[gateway.model]?.gwCapacity)||2000):99999;
+  const load=Math.min(100,(totalKbps/cap)*100);
+  return {totalKbps,load,cap,perDev};
+}
+
+// ===== 数据采集联动 =====
+function getActiveDataDevices(){return nodes.filter(n=>['plc','sensor','camera','robot'].includes(n.type));}
+function refreshDataPanel(){
+  const devs=getActiveDataDevices();
+  if(devs.length===0||!simulationRunning){
+    document.getElementById('dataBody').innerHTML='';
+    document.getElementById('noDataHint').style.display=devs.length===0||!simulationRunning?'':'none';
+    return;
+  }
+  document.getElementById('noDataHint').style.display='none';
+  generateData();
+}
+
+function generateData(){
+  const devs=getActiveDataDevices();if(devs.length===0)return;
+  const tbody=document.getElementById('dataBody');
+  const now=new Date();const timeStr=now.toLocaleTimeString('zh-CN');
+  const dataMapByModel={
+    '温湿度':[
+      {point:'温度(℃)',gen:()=>(22+Math.random()*6).toFixed(1),cls:'val-ok'},
+      {point:'湿度(%RH)',gen:()=>(45+Math.random()*20).toFixed(1),cls:'val-ok'}
+    ],
+    '电容式':[
+      {point:'感应距离(mm)',gen:()=>(8+Math.random()*2).toFixed(1),cls:'val-ok'},
+      {point:'开关状态',gen:()=>Math.random()>.5?'ON':'OFF',cls:'val-ok'},
+      {point:'工作电流(mA)',gen:()=>(10+Math.random()*5).toFixed(1),cls:'val-ok'}
+    ],
+    '电感式':[
+      {point:'感应距离(mm)',gen:()=>(4+Math.random()*1).toFixed(1),cls:'val-ok'},
+      {point:'目标识别',gen:()=>Math.random()>.3?'铁件':'其他',cls:()=>Math.random()>.3?'val-ok':'val-warn'},
+      {point:'开关频率(Hz)',gen:()=>(100+Math.random()*50).toFixed(0),cls:'val-ok'}
+    ],
+    '光电式':[
+      {point:'信号强度(%)',gen:()=>(85+Math.random()*15).toFixed(1),cls:'val-ok'},
+      {point:'检测状态',gen:()=>Math.random()>.2?'检出':'未检出',cls:()=>Math.random()>.2?'val-ok':'val-warn'},
+      {point:'响应时间(ms)',gen:()=>(1+Math.random()*2).toFixed(1),cls:'val-ok'}
+    ],
+    '压力':[
+      {point:'压力(MPa)',gen:()=>(0.4+Math.random()*0.2).toFixed(2),cls:'val-ok'},
+      {point:'介质温度(℃)',gen:()=>(25+Math.random()*10).toFixed(1),cls:'val-ok'},
+      {point:'量程(%)',gen:()=>(40+Math.random()*20).toFixed(0),cls:'val-ok'}
+    ],
+    '流量':[
+      {point:'瞬时流量(m³/h)',gen:()=>(12+Math.random()*5).toFixed(1),cls:'val-ok'},
+      {point:'累计流量(m³)',gen:()=>(12500+Math.random()*50).toFixed(1),cls:'val-ok'},
+      {point:'介质温度(℃)',gen:()=>(20+Math.random()*8).toFixed(1),cls:'val-ok'}
+    ],
+    'S7-200 SMART':[
+      {point:'运行状态',gen:()=>Math.random()>.1?'运行中':'停机',cls:()=>Math.random()>.1?'val-ok':'val-warn'},
+      {point:'输入 I0.0-I0.7',gen:()=>'0b'+Array.from({length:8},()=>Math.random()>.5?1:0).join(''),cls:'val-ok'},
+      {point:'输出 Q0.0-Q0.7',gen:()=>'0b'+Array.from({length:8},()=>Math.random()>.5?1:0).join(''),cls:'val-ok'}
+    ],
+    'FX5U':[
+      {point:'运行状态',gen:()=>Math.random()>.1?'RUN':'STOP',cls:'val-ok'},
+      {point:'输入 X0-X17',gen:()=>(Math.random()*65535|0).toString(16).padStart(4,'0'),cls:'val-ok'},
+      {point:'存储器使用率',gen:()=>(25+Math.random()*10).toFixed(0)+'%',cls:'val-ok'}
+    ],
+    'S7-1200':[
+      {point:'运行状态',gen:()=>Math.random()>.1?'运行中':'停机',cls:()=>Math.random()>.1?'val-ok':'val-warn'},
+      {point:'计数器(件)',gen:()=>Math.floor(1000+Math.random()*500),cls:'val-ok'},
+      {point:'主轴转速(rpm)',gen:()=>Math.floor(1200+Math.random()*200),cls:'val-ok'}
+    ],
+    'S7-1500':[
+      {point:'运行状态',gen:()=>Math.random()>.1?'运行中':'停机',cls:()=>Math.random()>.1?'val-ok':'val-warn'},
+      {point:'工艺对象速度',gen:()=>(50+Math.random()*20).toFixed(1),cls:'val-ok'},
+      {point:'轴位置(°)',gen:()=>(Math.random()*360).toFixed(1),cls:'val-ok'},
+      {point:'CPU 负载(%)',gen:()=>(30+Math.random()*30).toFixed(0),cls:'val-ok'}
+    ],
+    'CompactLogix':[
+      {point:'控制器模式',gen:()=>Math.random()>.1?'Remote Run':'Program',cls:'val-ok'},
+      {point:'扫描时间(ms)',gen:()=>(5+Math.random()*10).toFixed(1),cls:'val-ok'},
+      {point:'连接 CIP(个)',gen:()=>Math.floor(20+Math.random()*10),cls:'val-ok'}
+    ],
+    'S7-300':[
+      {point:'运行状态',gen:()=>Math.random()>.1?'RUN':'STOP',cls:'val-ok'},
+      {point:'DB 块使用',gen:()=>Math.floor(100+Math.random()*50)+' 块',cls:'val-ok'},
+      {point:'通讯连接(个)',gen:()=>Math.floor(8+Math.random()*6),cls:'val-ok'}
+    ],
+    'ControlLogix':[
+      {point:'冗余状态',gen:()=>Math.random()>.05?'主控':'备机',cls:'val-ok'},
+      {point:'扫描周期(ms)',gen:()=>(2+Math.random()*5).toFixed(1),cls:'val-ok'},
+      {point:'以太网节点数',gen:()=>Math.floor(100+Math.random()*30),cls:'val-ok'}
+    ],
+    '海康MV-CS200':[
+      {point:'帧率(fps)',gen:()=>(25+Math.random()*5).toFixed(1),cls:'val-ok'},
+      {point:'缺陷数',gen:()=>Math.floor(Math.random()*5),cls:'val-ok'},
+      {point:'曝光时间(ms)',gen:()=>(8+Math.random()*4).toFixed(1),cls:'val-ok'},
+      {point:'检测结果',gen:()=>Math.random()>.05?'PASS':'FAIL',cls:()=>Math.random()>.05?'val-ok':'val-warn'}
+    ],
+    'Basler':[
+      {point:'帧率(fps)',gen:()=>(60+Math.random()*10).toFixed(1),cls:'val-ok'},
+      {point:'像素时钟(MHz)',gen:()=>(80+Math.random()*20).toFixed(0),cls:'val-ok'},
+      {point:'ROI 区域',gen:()=>(Math.random()*2048|0)+'×'+(Math.random()*2048|0),cls:'val-ok'}
+    ],
+    'KEYENCE':[
+      {point:'检测结果',gen:()=>Math.random()>.05?'OK':'NG',cls:()=>Math.random()>.05?'val-ok':'val-warn'},
+      {point:'工具状态',gen:()=>Math.random()>.5?'运行':'待机',cls:'val-ok'},
+      {point:'拍照指令(次)',gen:()=>Math.floor(500+Math.random()*100),cls:'val-ok'}
+    ],
+    'Cognex':[
+      {point:'缺陷分类',gen:()=>['无','划痕','污渍','凹坑'][Math.floor(Math.random()*4)],cls:()=>Math.random()>.05?'val-ok':'val-warn'},
+      {point:'匹配分',gen:()=>(85+Math.random()*15).toFixed(1),cls:'val-ok'},
+      {point:'定位坐标(x,y)',gen:()=>(Math.random()*1000|0)+','+(Math.random()*1000|0),cls:'val-ok'}
+    ],
+    'AGV':[
+      {point:'电量(%)',gen:()=>Math.floor(60+Math.random()*40),cls:'val-ok'},
+      {point:'位置',gen:()=>['A区','B区','C区','充电区'][Math.floor(Math.random()*4)],cls:'val-ok'},
+      {point:'任务状态',gen:()=>['搬运中','空闲','充电中'][Math.floor(Math.random()*3)],cls:'val-ok'}
+    ],
+    'ABB-IRB1200':[
+      {point:'J1-J6 轴角(°)',gen:()=>Array.from({length:6},()=>(Math.random()*360).toFixed(1)).join(','),cls:'val-ok'},
+      {point:'工具坐标(x,y,z)',gen:()=>(Math.random()*500|0)+','+(Math.random()*500|0)+','+(Math.random()*200|0),cls:'val-ok'},
+      {point:'IO 状态',gen:()=>'DO['+Math.floor(Math.random()*4)+']='+(Math.random()>.5?'1':'0'),cls:'val-ok'}
+    ],
+    'Epson-LS6':[
+      {point:'J1-J4 角度(°)',gen:()=>Array.from({length:4},()=>(Math.random()*360).toFixed(1)).join(','),cls:'val-ok'},
+      {point:'速度(%)',gen:()=>(50+Math.random()*50).toFixed(0),cls:'val-ok'},
+      {point:'扭矩(N·m)',gen:()=>(Math.random()*10).toFixed(1),cls:'val-ok'}
+    ],
+    'UR5e':[
+      {point:'J1-J6 关节(°)',gen:()=>Array.from({length:6},()=>(Math.random()*360).toFixed(1)).join(','),cls:'val-ok'},
+      {point:'末端速度(mm/s)',gen:()=>(Math.random()*1000).toFixed(0),cls:'val-ok'},
+      {point:'安全状态',gen:()=>Math.random()>.05?'正常':'急停',cls:()=>Math.random()>.05?'val-ok':'val-warn'}
+    ],
+  };
+  const dataMapByType={
+    sensor:dataMapByModel['温湿度'],
+    plc:[
+      {point:'运行状态',gen:()=>Math.random()>.1?'运行中':'停机',cls:'val-ok'},
+      {point:'寄存器值',gen:()=>Math.floor(1000+Math.random()*500),cls:'val-ok'},
+    ],
+    camera:[
+      {point:'检测结果',gen:()=>Math.random()>.05?'PASS':'FAIL',cls:()=>Math.random()>.05?'val-ok':'val-warn'},
+    ],
+    robot:[
+      {point:'位置',gen:()=>['A区','B区','C区','充电区'][Math.floor(Math.random()*4)],cls:'val-ok'},
+      {point:'电量(%)',gen:()=>Math.floor(60+Math.random()*40),cls:'val-ok'},
+    ],
+  };
+  let rows=[];
+  devs.forEach(dev=>{
+    const configs=(dev.model&&dataMapByModel[dev.model])||dataMapByType[dev.type]||[];
+    const filtered=currentFilter==='all'?configs:configs.filter(()=>{
+      if(currentFilter==='Modbus')return dev.protocol.includes('Modbus')||dev.protocol.includes('RTU')||dev.protocol.includes('HART');
+      if(currentFilter==='OPC UA')return dev.protocol.includes('OPC');
+      if(currentFilter==='MQTT')return dev.protocol.includes('MQTT')||dev.protocol.includes('GigE')||dev.protocol.includes('USB')||dev.protocol.includes('Socket');
+      if(currentFilter==='Ethernet/IP')return dev.protocol.includes('Ethernet/IP');
+      if(currentFilter==='IO-Link')return dev.protocol.includes('IO-Link');
+      return true;
+    });
+    if(filtered.length===0)return;
+    filtered.forEach(cfg=>{
+      let val,cls,trClass='';
+      const isMqttDevice=dev.protocol.includes('MQTT')||dev.protocol.includes('Broker')||dev.protocol.includes('GigE')||dev.protocol.includes('USB');
+      const isModbusDevice=dev.protocol.includes('Modbus')||dev.protocol.includes('RTU')||dev.protocol.includes('HART');
+      // 检查该点位是否属于「可选拓展」项（所在链路未开启排障全量时显示为未上传）
+      const pointMeta=getFullPointList(dev.model,dev.type).find(p=>p.name===cfg.point);
+      const isOptional=pointMeta && pointMeta.kind==='optional';
+      const isOffline=isOptional && getNodePolicy(dev.id)!=='full';
+      if(isOffline){
+        // 日常链路：可选拓展点位显示为「未上传」灰色占位
+        val='— 未上传';
+        cls='val-offline';
+        trClass='offline-row';
+      }
+      else if(dev.fault){
+        if(faultType==='mqtt_topic'&&isMqttDevice){val='---';cls='val-err';trClass='fault-row';}
+        else if(faultType==='modbus_conflict'&&isModbusDevice){
+          if(cfg.point.includes('状态')||cfg.point.includes('结果')||cfg.point.includes('识别'))val='超时';
+          else if(cfg.point.includes('%')||cfg.point.includes('('))val='0.0';
+          else val='0';
+          cls='val-corrupt';trClass='warn-row';
+        }
+        else if(faultType==='mqtt_auth'&&isMqttDevice){val='---';cls='val-err';trClass='fault-row';}
+        else{val=cfg.gen();cls=typeof cfg.cls==='function'?cfg.cls():cfg.cls;}
+      }else{
+        val=cfg.gen();cls=typeof cfg.cls==='function'?cfg.cls():cfg.cls;
+      }
+      const statusHtml=isOffline
+        ?'<span class="val-offline">○ 未上传</span>'
+        :(dev.fault?(faultType==='modbus_conflict'?'<span class="val-warn">⚠ 超时</span>':'<span class="val-err">✗ 中断</span>'):'<span class="val-ok">✓</span>');
+      // 点位类型圆点：核心蓝 / 拓展琥珀（已上传） / 拓展灰（未上传）
+      const dotColor=isOptional?(isOffline?'#cbd5e1':'#d97706'):'#0369a1';
+      const ptDot=`<span class="pt-kind-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:5px;vertical-align:1px;" title="${isOptional?(isOffline?'拓展点位（未上传）':'拓展点位（已上传）'):'核心点位'}"></span>`;
+      const pointTag=isOptional?' <span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 4px;border-radius:3px;font-weight:700;">拓展</span>':'';
+      rows.push(`<tr class="${trClass}"><td>${dev.name}</td><td>${dev.protocol}</td><td>${ptDot}${cfg.point}${pointTag}</td><td class="${cls}">${val}</td><td>${timeStr}</td><td>${statusHtml}</td></tr>`);
+    });
+  });
+  tbody.innerHTML=rows.join('');
+  document.getElementById('noDataHint').style.display='none';
+  const totalRows=rows.length;
+  const faultRows=rows.filter(r=>r.includes('val-err')||r.includes('val-corrupt')).length;
+  const okRate=totalRows>0?Math.round((totalRows-faultRows)/totalRows*100):0;
+  document.getElementById('metricOk').textContent=okRate+'%';
+  document.getElementById('metricOk').className='val '+(okRate<100?'warn':'ok');
+}
+
+function filterProtocol(btn,proto){
+  currentFilter=proto;
+  document.querySelectorAll('.protocol-tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(simulationRunning)generateData();
+}
+
+// ===== 采样频率 =====
+function changeFrequency(v){
+  currentFrequency=parseInt(v);
+  document.getElementById('freqVal').textContent=currentFrequency+' Hz';
+  if(simulationRunning){
+    if(simInterval)clearInterval(simInterval);
+    simInterval=setInterval(()=>{if(simulationRunning)generateData();},1000/currentFrequency);
+  }
+  updateMetrics();
+  // 选中节点时刷新属性面板
+  const sel=document.querySelector('.topo-node.selected');
+  if(sel){
+    const id=parseInt(sel.id.split('-')[1]);
+    const node=nodes.find(n=>n.id===id);
+    if(node)showNodeProps(node);
+  }
+}
+
+// ===== 仿真启停 =====
+function toggleSimulation(){
+  if(simulationRunning)stopSimulation();
+  else startSimulation();
+}
+function startSimulation(){
+  if(nodes.length===0){alert('请先搭建拓扑');return;}
+  simulationRunning=true;
+  const btn=document.getElementById('btnSimulate');
+  btn.textContent='⏸ 停止采集';btn.style.background='#b71c1c';btn.style.borderColor='#ff1744';btn.style.color='#fff';
+  simInterval=setInterval(()=>{if(simulationRunning)generateData();},1000/currentFrequency);
+  particleInterval=setInterval(spawnParticles,Math.max(400,800/currentFrequency));
+  checkRepairStatus();generateData();updateMetrics();
+  // 关闭新手引导
+  closeNewbieGuide();
+}
+function stopSimulation(){
+  simulationRunning=false;
+  const btn=document.getElementById('btnSimulate');
+  btn.textContent='▶ 启动采集';btn.style.background='';btn.style.borderColor='';btn.style.color='';
+  if(simInterval)clearInterval(simInterval);
+  if(particleInterval)clearInterval(particleInterval);
+  simInterval=null;particleInterval=null;
+  document.getElementById('noDataHint').style.display='';
+  updateMetrics();
+}
+
+// ===== 数据粒子动画 =====
+function spawnParticles(){
+  connections.forEach(conn=>{
+    const skip=faultActive&&(conn.from===faultNodeId||conn.to===faultNodeId);
+    if(conn.status!=='active'||skip)return;
+    const f=nodes.find(n=>n.id===conn.from),t=nodes.find(n=>n.id===conn.to);
+    if(!f||!t)return;
+    const fx=f.x,fy=f.y,tx=t.x,ty=t.y;
+    const isFull=conn.policy==='full';
+    let pClass='particle-mqtt';
+    if(f.protocol.includes('Modbus')||t.protocol.includes('Modbus'))pClass='particle-modbus';
+    else if(f.protocol.includes('OPC')||t.protocol.includes('OPC'))pClass='particle-opcua';
+    // 排障全量链路：琥珀色粒子 + 数量翻倍（数据量直观可见）
+    if(isFull)pClass+=' particle-full';
+    // 频率高时多发粒子
+    const count=isFull?Math.min(6,Math.ceil(currentFrequency/3)*2):Math.min(3,Math.ceil(currentFrequency/3));
+    for(let i=0;i<count;i++){
+      setTimeout(()=>{
+        const p=document.createElement('div');p.className=`data-particle ${pClass}`;
+        p.style.left=fx+'px';p.style.top=fy+'px';canvas.appendChild(p);
+        const dur=600+Math.random()*400,st=performance.now();
+        function anim(time){const prog=Math.min((time-st)/dur,1);p.style.left=(fx+(tx-fx)*prog)+'px';p.style.top=(fy+(ty-fy)*prog)+'px';p.style.opacity=1-prog*.5;if(prog<1)requestAnimationFrame(anim);else p.remove();}
+        requestAnimationFrame(anim);
+      },i*150);
+    }
+  });
+}
+
+// ===== 指标更新（含流量 + 网关负载条） =====
+function updateMetrics(){
+  const devs=getActiveDataDevices();
+  document.getElementById('metricDevices').textContent=devs.filter(n=>!n.fault).length;
+  // 点位数量按链路策略统计：日常链路只算 core，排障链路包含 optional
+  const fullPts=devs.reduce((s,n)=>s+getFullPointList(n.model,n.type).length,0);
+  const activePts=devs.reduce((s,n)=>s+getActivePointCount(n.model,n.type,getNodePolicy(n.id)),0);
+  const coreOnlyPts=devs.reduce((s,n)=>s+getFullPointList(n.model,n.type).filter(p=>p.kind==='core').length,0);
+  const ptsEl=document.getElementById('metricPoints');
+  if(ptsEl){
+    ptsEl.textContent=activePts;
+    ptsEl.title=activePts>coreOnlyPts
+      ?`当前上传点位 ${activePts}（含排障链路可选拓展点位 ${activePts-coreOnlyPts} 项）`
+      :`当前上传点位 ${activePts}（设备总点位 ${fullPts}；可选拓展点位 ${fullPts-activePts} 项未上传，链路开关可开启）`;
+  }
+  // 在指标区显示链路策略统计（v3.4：策略在连线中点开关上，不在顶栏）
+  const modeEl=document.getElementById('policyIndicator');
+  if(modeEl){
+    const lp=countLinkPolicy();
+    modeEl.textContent=lp.total===0
+      ?'链路策略：暂无连线'
+      :(lp.full>0?`链路策略：${lp.full}/${lp.total} 条排障全量`:`链路策略：全部仅核心 (${lp.core})`);
+    modeEl.style.color=lp.full>0?'#d97706':'#0369a1';
+  }
+  // 流量
+  const traffic=calculateTraffic();
+  document.getElementById('metricTraffic').textContent=traffic.totalKbps.toFixed(1);
+  document.getElementById('metricTraffic').className='val '+(traffic.totalKbps>traffic.cap*0.7?'warn':(traffic.totalKbps>traffic.cap*0.9?'danger':'ok'));
+  // 网关负载
+  document.getElementById('metricLoad').textContent=traffic.load.toFixed(0)+'%';
+  document.getElementById('metricLoad').className='val '+(traffic.load>70?'warn':(traffic.load>90?'danger':'ok'));
+  // 流量历史（折线图）
+  if(simulationRunning){
+    trafficHistory.push(traffic.totalKbps);
+    if(trafficHistory.length>60)trafficHistory.shift();
+    if(traffic.totalKbps>peakTraffic)peakTraffic=traffic.totalKbps;
+    drawSparkline();
+    document.getElementById('tmPeak').textContent='峰值 ' + peakTraffic.toFixed(1) + ' kbps';
+  }
+  // 网关节点负载条
+  nodes.filter(n=>n.type==='gateway').forEach(g=>{
+    const bar=document.getElementById(`glb-${g.id}`);
+    if(bar){
+      bar.style.width=traffic.load+'%';
+      bar.style.background=traffic.load>90?'#dc2626':(traffic.load>70?'#f59e0b':'#10b981');
+    }
+    // 过载样式
+    const el=document.getElementById(`node-${g.id}`);
+    if(el){
+      if(traffic.load>90&&simulationRunning)el.classList.add('overload');
+      else el.classList.remove('overload');
+    }
+  });
+}
+
+// ===== Sparkline 折线图 =====
+function drawSparkline(){
+  const canvasEl=document.getElementById('trafficSparkline');
+  if(!canvasEl)return;
+  const ctx=canvasEl.getContext('2d');
+  const w=canvasEl.width,h=canvasEl.height;
+  ctx.clearRect(0,0,w,h);
+  if(trafficHistory.length<2)return;
+  // 网格线
+  ctx.strokeStyle='#e2e8f0';ctx.lineWidth=1;
+  for(let i=1;i<4;i++){
+    ctx.beginPath();ctx.moveTo(0,h*i/4);ctx.lineTo(w,h*i/4);ctx.stroke();
+  }
+  const max=Math.max(...trafficHistory,1)*1.2;
+  // 折线
+  ctx.strokeStyle='#0ea5e9';ctx.lineWidth=2;
+  ctx.beginPath();
+  trafficHistory.forEach((v,i)=>{
+    const x=(i/(trafficHistory.length-1))*w;
+    const y=h-(v/max)*h;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  // 填充渐变
+  ctx.lineTo(w,h);ctx.lineTo(0,h);ctx.closePath();
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'rgba(14,165,233,.3)');
+  grad.addColorStop(1,'rgba(14,165,233,0)');
+  ctx.fillStyle=grad;ctx.fill();
+  // 当前点
+  const last=trafficHistory[trafficHistory.length-1];
+  const lx=w,ly=h-(last/max)*h;
+  ctx.fillStyle='#0ea5e9';ctx.beginPath();ctx.arc(lx-2,ly,3,0,Math.PI*2);ctx.fill();
+  // 70% 警戒线
+  const gate=nodes.find(n=>n.type==='gateway');
+  if(gate){
+    const cap=deviceSpecs[gate.model]?.gwCapacity||2000;
+    const warnY=h-(cap*0.7/max)*h;
+    if(warnY>0&&warnY<h){
+      ctx.strokeStyle='#f59e0b';ctx.setLineDash([3,3]);ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(0,warnY);ctx.lineTo(w,warnY);ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+// ===== 故障系统 =====
+function showFaultModal(){
+  if(nodes.length===0){alert('画布为空，请先拖入设备（或点击「📋 预设拓扑」）再注入故障。');return;}
+  document.getElementById('faultModal').classList.add('show');
+}
+function closeFaultModal(){document.getElementById('faultModal').classList.remove('show');}
+
+function injectFault(type){
+  closeFaultModal();
+  const def=faultDefs[type];
+  const targetNode=findFaultTarget(type);
+  if(!targetNode){
+    const modelList=def.models.join('、');
+    alert(`请先在拓扑中添加「${def.targetLabel}」中的一种设备：\n\n${modelList}\n\n提示：可使用左侧设备库拖拽，或点击「加载预设拓扑」自动搭建。`);
+    return;
+  }
+  if(faultActive)clearFault();
+  faultActive=true;faultNodeId=targetNode.id;faultType=type;
+  targetNode.fault=true;
+  const el=document.getElementById(`node-${targetNode.id}`);
+  el.classList.add(def.nodeClass);
+  document.getElementById(`dot-${targetNode.id}`).className='status-dot '+def.dotClass;
+  const banner=document.getElementById('faultBanner');
+  banner.className='fault-banner show level-'+def.level;
+  document.getElementById('fbIcon').textContent=def.icon;
+  document.getElementById('faultText').textContent=targetNode.name+' 数据采集中断';
+  document.getElementById('faultSub').textContent=def.bannerSub;
+  const badge=document.getElementById('statusBadge');
+  badge.textContent='⚠️ 故障告警';badge.className='badge fault';
+  document.getElementById('btnFault').textContent='✅ 恢复故障';
+  redrawLines();updateMetrics();generateData();
+}
+
+function clearFault(){
+  if(!faultActive)return;
+  faultActive=false;
+  if(faultNodeId){
+    const node=nodes.find(n=>n.id===faultNodeId);
+    if(node){
+      node.fault=false;
+      const el=document.getElementById(`node-${node.id}`);
+      if(el){el.classList.remove('fault-err','fault-warn','fault-node');document.getElementById(`dot-${node.id}`).className='status-dot status-online';}
+    }
+  }
+  faultNodeId=null;faultType=null;
+  document.getElementById('faultBanner').className='fault-banner';
+  const badge=document.getElementById('statusBadge');badge.textContent='系统正常';badge.className='badge';
+  document.getElementById('btnFault').textContent='⚡ 注入故障';
+  redrawLines();updateMetrics();if(simulationRunning)generateData();
+}
+
+function openDiagnosis(){
+  const fn=nodes.find(n=>n.id===faultNodeId);
+  localStorage.setItem('fault_state',JSON.stringify({
+    active:true,faultType:faultType,deviceName:fn?fn.name:'未知设备',
+    protocol:fn?fn.protocol:'未知',faultName:faultDefs[faultType].name,
+    timestamp:new Date().toISOString()
+  }));
+  window.open('./fault-diagnosis.html','_blank');
+}
+// 顶部Tab / 工具栏「🔍 网络诊断」统一入口：已注入故障→带故障状态跳转；未注入→确认后进入演示模式
+function gotoDiagnosis(){
+  if(faultActive&&faultType){openDiagnosis();return;}
+  if(confirm('当前尚未注入故障。\n\n· 点「确定」：直接进入网络诊断页面（默认演示 MQTT Topic 映射故障场景）\n· 点「取消」：返回搭建页，先点击「⚡ 注入故障」体验完整诊断流程')){
+    window.open('./fault-diagnosis.html','_blank');
+  }
+}
+function dismissFault(){document.getElementById('faultBanner').classList.remove('show');}
+
+// ===== 自动布局：现场设备 → 边缘网关 → 云平台 三层结构一键整理 =====
+function autoLayout(){
+  if(nodes.length===0){alert('画布为空，请先拖入设备或点击「📋 预设拓扑」。');return;}
+  const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  const fields=nodes.filter(n=>n.type!=='gateway'&&n.type!=='server');
+  const gws=nodes.filter(n=>n.type==='gateway');
+  const svs=nodes.filter(n=>n.type==='server');
+  const cols=[
+    {list:fields,x:cw*0.16},
+    {list:gws,x:cw*0.5},
+    {list:svs,x:cw*0.84},
+  ];
+  cols.forEach(col=>{
+    const n=col.list.length;
+    const gap=Math.min(130,(ch-80)/Math.max(n,1));
+    col.list.forEach((node,i)=>{
+      node.x=Math.max(node.w/2+10,Math.min(col.x,cw-node.w/2-10));
+      let cy=ch/2+(i-(n-1)/2)*gap;
+      cy=Math.max(node.h/2+70,Math.min(cy,ch-node.h/2-30)); // 顶部预留工具栏/横幅空间
+      node.y=cy;
+      const el=document.getElementById(`node-${node.id}`);
+      if(el){el.style.left=(node.x-node.w/2)+'px';el.style.top=(node.y-node.h/2)+'px';}
+    });
+  });
+  redrawLines();updateMetrics();
+}
+
+// ===== 拓扑导出/导入 =====
+// v3.2：每条连线携带 policy（core=仅核心 / full=排障全量），顶层携带链路策略统计；
+// 节点仍带点位清单快照（name/kind/weight），教师批阅时无需依赖内置点位表即可直观区分核心/拓展点位
+function exportTopology(){
+  const lp=countLinkPolicy();
+  const data={
+    version:'3.2',
+    exportTime:new Date().toISOString(),
+    linkPolicy:{core:lp.core,full:lp.full,total:lp.total},
+    policyLabel:lp.full>0
+      ?`链路策略：${lp.full}/${lp.total} 条排障全量上传（可选拓展点位、原始数据一并上传）`
+      :(lp.total>0?`链路策略：全部 ${lp.total} 条链路仅核心点位上传`:'链路策略：无连线'),
+    frequency:currentFrequency,
+    nodes:nodes.map(n=>({id:n.id,type:n.type,name:n.name,model:n.model,x:n.x,y:n.y,w:n.w,h:n.h,
+      points:getFullPointList(n.model,n.type).map(p=>({name:p.name,kind:p.kind,weight:p.weight}))})),
+    connections:connections.map(c=>({from:c.from,to:c.to,policy:c.policy||'core'}))
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='topology-' + Date.now() + '.json';
+  a.click();URL.revokeObjectURL(url);
+}
+function importTopology(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!data.nodes)throw new Error('无效的拓扑文件');
+      applyTopologyData(data);
+      alert('拓扑导入成功！\n节点：'+data.nodes.length+' 个\n连线：'+(data.connections||[]).length+' 条');
+    }catch(err){
+      alert('导入失败：'+err.message);
+    }
+    e.target.value='';
+  };
+  reader.readAsText(file);
+}
+
+// 应用拓扑数据（导入文件 / 批阅页跳转 共用）
+function applyTopologyData(data){
+  clearAll();
+  // v3.1 兼容：旧文件只有全局 uploadMode —— diagnosis 时所有链路视为 full
+  const legacyFull=data.uploadMode==='diagnosis';
+  // 点位快照兜底注册：学生导出的节点带 points 清单时，注入 pointListByModel，
+  // 保证查看端（即使内置表未收录该型号）也能渲染核心/拓展分层
+  if(Array.isArray(data.nodes)){
+    data.nodes.forEach(n=>{
+      if(Array.isArray(n.points)&&n.points.length>0&&n.model&&!pointListByModel[n.model]){
+        const clean=n.points.filter(p=>p&&p.name&&(p.kind==='core'||p.kind==='optional'))
+          .map(p=>({name:String(p.name),kind:p.kind,weight:Number(p.weight)||0}));
+        if(clean.length>0)pointListByModel[n.model]=clean;
+      }
+    });
+  }
+  if(data.frequency){
+    currentFrequency=data.frequency;
+    document.getElementById('freqSlider').value=currentFrequency;
+    document.getElementById('freqVal').textContent=currentFrequency+' Hz';
+  }
+  data.nodes.forEach(n=>{
+    const created=createNode(n.type,n.name,n.model,n.x,n.y);
+    if(created&&n.w&&n.h){
+      created.w=n.w;created.h=n.h;
+      const el=document.getElementById(`node-${created.id}`);
+      if(el){
+        el.style.width=n.w+'px';el.style.height=n.h+'px';
+        el.style.left=(n.x-n.w/2)+'px';el.style.top=(n.y-n.h/2)+'px';
+      }
+    }
+  });
+  setTimeout(()=>{
+    if(data.connections){
+      // v3.2：按链路恢复 policy；v3.1 及更早：按全局模式兜底
+      data.connections.forEach(c=>addConnection(c.from,c.to,c.policy||(legacyFull?'full':'core')));
+    }
+    document.getElementById('connectHint').style.display='none';
+    updateMetrics();refreshDataPanel();
+  },50);
+}
+
+// ===== 查看学生提交拓扑（批阅页跳转 / 新窗口 / 全屏，三通道均可恢复） =====
+let studentTopoApplied=false;
+function showTopoViewBanner(fileName,policyInfo){
+  const bar=document.getElementById('topoViewBanner');
+  if(!bar)return;
+  document.getElementById('topoViewBannerName').textContent=fileName||'学生提交的拓扑.json';
+  // 显示学生导出时的链路采集策略（v3.2 逐链路；v3.1 为全局模式）
+  const mEl=document.getElementById('topoViewBannerMode');
+  if(mEl){
+    let text='',bg='#0369a1';
+    if(policyInfo&&typeof policyInfo==='object'&&policyInfo.total>0){
+      if(policyInfo.full>0){text=`采集策略：${policyInfo.full}/${policyInfo.total} 条链路排障全量上传`;bg='#d97706';}
+      else{text=`采集策略：全部 ${policyInfo.total} 条链路仅核心点位上传`;}
+    }else if(policyInfo==='diagnosis'){
+      text='采集策略：排障 · 核心+拓展全上传';bg='#d97706';
+    }else if(policyInfo==='daily'){
+      text='采集策略：日常 · 仅核心点位上传';
+    }
+    if(text){mEl.textContent=text;mEl.style.background=bg;mEl.style.display='inline-block';}
+    else mEl.style.display='none';
+  }
+  bar.style.display='flex';
+}
+function closeTopoViewBanner(){
+  const bar=document.getElementById('topoViewBanner');
+  if(bar)bar.style.display='none';
+  const mEl=document.getElementById('topoViewBannerMode');
+  if(mEl)mEl.style.display='none';
+  try{localStorage.removeItem('iiot_topo_active_view');}catch(_){}
+}
+// 统一入口：应用学生拓扑 + 显示横幅 + 持久化（供新窗口/刷新恢复）
+function applyStudentTopo(data,fileName){
+  applyTopologyData(data);
+  // 统计学生导出的链路策略：v3.2 逐链路 policy；v3.1 全局 uploadMode 兜底
+  let policyInfo;
+  if(Array.isArray(data.connections)&&data.connections.some(c=>c.policy)){
+    policyInfo={
+      total:data.connections.length,
+      full:data.connections.filter(c=>c.policy==='full').length
+    };
+  }else if(data.uploadMode==='daily'||data.uploadMode==='diagnosis'){
+    policyInfo=data.uploadMode;
+  }
+  showTopoViewBanner(fileName||data.fileName,policyInfo);
+  try{localStorage.setItem('iiot_topo_active_view',JSON.stringify({data:data,fileName:fileName||data.fileName||'',ts:Date.now()}));}catch(_){}
+  studentTopoApplied=true;
+  console.log('[network-topo] 已加载学生提交的拓扑：',data.nodes.length,'个节点');
+}
+// 从 localStorage 读取批阅页写入的待查看拓扑（进入工作台时一次性加载）
+function checkPendingTopoImport(){
+  try{
+    const raw=localStorage.getItem('iiot_topo_pending_import');
+    if(!raw)return;
+    localStorage.removeItem('iiot_topo_pending_import');
+    const data=JSON.parse(raw);
+    if(!data||!Array.isArray(data.nodes))return;
+    applyStudentTopo(data,data.fileName);
+  }catch(err){console.error('[network-topo] 加载学生拓扑失败:',err);}
+}
+// 恢复最近一次查看的学生拓扑（iframe 刷新 / 新窗口打开 / 重新进入工作台时自动恢复，2 小时内有效）
+function restoreActiveTopoView(){
+  if(studentTopoApplied)return;
+  try{
+    const raw=localStorage.getItem('iiot_topo_active_view');
+    if(!raw)return;
+    const rec=JSON.parse(raw);
+    if(!rec||!rec.data||!Array.isArray(rec.data.nodes))return;
+    if(Date.now()-(rec.ts||0)>2*60*60*1000){try{localStorage.removeItem('iiot_topo_active_view');}catch(_){}return;}
+    applyStudentTopo(rec.data,rec.fileName);
+    console.log('[network-topo] 已恢复最近查看的学生拓扑（新窗口/刷新场景）');
+  }catch(err){console.error('[network-topo] 恢复学生拓扑失败:',err);}
+}
+// iframe 已加载时，通过 postMessage 接收批阅页推送的拓扑
+window.addEventListener('message',(ev)=>{
+  const d=ev.data;
+  if(d&&d.type==='iiot-topo-import'&&d.payload&&Array.isArray(d.payload.nodes)){
+    applyStudentTopo(d.payload,d.payload.fileName);
+  }
+});
+
+function checkRepairStatus(){
+  const repaired=localStorage.getItem('fault_repaired');
+  if(repaired==='true'){
+    clearFault();localStorage.removeItem('fault_repaired');localStorage.removeItem('fault_state');
+    const badge=document.getElementById('statusBadge');badge.textContent='✅ 故障已修复';badge.style.background='#00e676';
+    setTimeout(()=>{badge.textContent='系统正常';badge.style.background='';},3000);
+  }
+}
+setInterval(checkRepairStatus,2000);
+window.addEventListener('focus',checkRepairStatus);
+
+// ===== 初始化 =====
+restoreCategoryState();
+checkPendingTopoImport();
+restoreActiveTopoView();
+// 学生拓扑查看模式下展开全部设备分类（避免设备库折叠显得"空白"）
+if(studentTopoApplied){
+  openCategory('plc');openCategory('sensor');openCategory('camera');openCategory('robot');openCategory('gateway-hi');openCategory('gateway-lo');openCategory('server');
+  document.getElementById('connectHint').style.display='none';
+}
+// 5 秒后若无操作且未点击关闭，引导新手
+setTimeout(()=>{
+  if(nodes.length===0&&!simulationRunning){
+    showNewbieGuide();
+  }
+},800);
+
+// ===== 通知父窗口：仿真页面已就绪（多重发） =====
+function notifyReady(){
+  try{
+    if(window.parent&&window.parent!==window){
+      window.parent.postMessage({
+        type:'iiot-sim-ready',source:'network-topo',
+        payload:{
+          timestamp:new Date().toISOString(),
+          url:location.href,
+          studentId:(function(){try{return localStorage.getItem('iiot_current_student_id')||'none';}catch(_){return 'none';}})()
+        }
+      },'*');
+      console.log('[network-topo] 已发送就绪信号到父窗口');
+    }
+  }catch(e){console.error('[network-topo] 发送就绪信号失败:',e);}
+}
+notifyReady();
+window.addEventListener('load',notifyReady);
+setTimeout(notifyReady,500);
+setTimeout(notifyReady,1500);
+setTimeout(notifyReady,3000);
+</script>
+</body>
+</html>
